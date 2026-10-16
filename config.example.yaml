@@ -1,0 +1,102 @@
+# wakeproxy configuration. Every setting is listed here, with its default where it has one.
+# ${NAME} is replaced by the environment variable NAME (${NAME:-default} with a default), so
+# secrets can live in the environment instead of this file.
+# Check a config without starting anything: python -m wakeproxy --config config.yaml --check
+
+# The machine that is woken and shut down.
+machine:
+  name: MyPC                    # shown on the status page and in messages
+  idle_minutes: 10              # shut down this long after the last hold ends (default 10)
+  wake_timeout: 180             # seconds to wait for the machine to answer after a wake (default 180)
+
+  # How to wake it (one plugin). Built in: wol, homeassistant, http, command.
+  wake:
+    type: wol                   # magic packet; from Docker this needs network_mode: host
+    mac: "aa:bb:cc:dd:ee:ff"
+    # broadcast: 255.255.255.255
+    # port: 9
+  # wake:
+  #   type: homeassistant       # Home Assistant sends the packet (or switches a smart plug)
+  #   url: http://homeassistant.lan:8123
+  #   token: ${HA_TOKEN}        # a long-lived access token
+  #   service: wake_on_lan.send_magic_packet
+  #   data: {mac: "aa:bb:cc:dd:ee:ff"}
+
+  # How to shut it down (one plugin). Built in: ssh, homeassistant, http, command.
+  # `force` variants are used when someone is signed in (see the windows_session source).
+  shutdown:
+    type: ssh
+    target: user@mypc.lan
+    key: /secrets/id_ed25519
+    known_hosts: /data/known_hosts       # remembers the host key; optional
+    command: shutdown /s /t 20           # default: Windows' own OpenSSH server
+    force_command: shutdown /s /f /t 20
+    # Linux: command: sudo systemctl poweroff (and the same for force_command)
+
+  # When the machine counts as up: any of these answering (at least one). Built in: tcp, http,
+  # ssh, command.
+  up_check:
+    - type: tcp
+      host: mypc.lan
+      port: 22
+
+# Services on the machine, reached through the proxy (port 8009) by path prefix. A request that
+# does work wakes the machine and holds it on while it runs; others never wake it.
+routes:
+  - name: ollama                # unique; shown on the status page and in the request log
+    prefix: ""                  # "" takes every path no other route takes; otherwise e.g. /whisper
+    upstream: http://mypc.lan:11434
+    health: /api/tags           # GET this to see whether the service is up (default /)
+    timeout: 600                # seconds a forwarded request may take (default 600)
+    work:                       # which requests do work
+      methods: [POST]           # default [POST]
+      paths: [/api/generate, /api/chat, /api/embed, /v1/chat/completions]   # prefixes; omit for every path
+    while_off:                  # the answer to other requests while the machine is off
+      cache_health: true        # GET <health> gets the last answer it gave (e.g. a model list)
+      status: 200               # default 503
+      body: {status: ok}        # default {"status": "offline", "machine": <name>}
+  - name: whisper
+    prefix: /whisper            # stripped before forwarding: /whisper/asr -> /asr
+    upstream: http://mypc.lan:9000
+    health: /docs
+    timeout: 7200
+
+# Wake sources: things that need the machine without sending requests through the proxy. Each
+# can wake it and keep it on. Built in: tdarr, windows_session. `name` (optional) is the name
+# shown on the status page.
+sources:
+  - type: tdarr                 # Tdarr's queue; its worker node runs on the machine
+    url: http://tdarr:8265
+    node: MyPC                  # the node's name in Tdarr
+    # stuck_minutes: 15         # give up if the node takes none of the queued work
+    # settle_minutes: 0         # wait before waking
+  - type: windows_session       # don't shut down under someone signed in with the screen unlocked
+    target: user@mypc.lan
+    key: /secrets/id_ed25519
+    known_hosts: /data/known_hosts
+    # max_hours: 3              # then shut down anyway
+    # session_command: query session
+    # lock_command: tasklist /FI "IMAGENAME eq LogonUI.exe"
+
+# Your own plugins: directories with .py files, used as `type: <ClassType>`; or give
+# `type: package.module:ClassName` for any importable class.
+plugin_paths: []
+
+proxy:
+  port: 8009
+  max_upload_mb: 1024           # largest request body (audio uploads)
+  # hold_token: ${HOLD_TOKEN}   # if set, the hold API needs "Authorization: Bearer <token>"
+
+status_page:
+  port: 8010
+  # Callers allowed to use it (your authenticating reverse proxy). Empty: anyone who can reach
+  # the port. 127.0.0.1 is always allowed.
+  trusted_proxies: []
+  # user_header: X-authentik-username   # who did what, in the history
+
+history:
+  path: /data/wakeproxy.db
+  request_days: 90              # request log
+  event_days: 365               # wakes, shutdowns and other events
+
+log_level: INFO

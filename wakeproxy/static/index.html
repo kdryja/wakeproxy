@@ -1,0 +1,506 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wakeproxy</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%2306b6d4' d='M13 3h-2v10h2V3zm4.83 2.17-1.42 1.42A6.92 6.92 0 0 1 19 12a7 7 0 1 1-11.41-5.42L6.17 5.17A8.93 8.93 0 0 0 3 12a9 9 0 0 0 18 0c0-2.74-1.23-5.18-3.17-6.83z'/%3E%3C/svg%3E">
+<style>
+:root {
+  --bg: #f6f7f9; --card: #ffffff; --text: #1c2330; --muted: #667085; --line: #e4e7ec;
+  --accent: #0e7490; --accent-soft: #e0f2f7; --on: #16a34a; --on-soft: #dcfce7;
+  --off: #98a2b3; --warn: #b45309; --warn-soft: #fef3c7; --bad: #dc2626; --bad-soft: #fee2e2;
+  --bar: #0e7490; --bar-ext: #7c3aed;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1218; --card: #171b23; --text: #e6e9ef; --muted: #8b93a5; --line: #262c38;
+    --accent: #22b8d6; --accent-soft: #11313b; --on: #34d399; --on-soft: #0f3326;
+    --off: #5b6373; --warn: #f59e0b; --warn-soft: #3a2a0c; --bad: #f87171; --bad-soft: #3b1414;
+    --bar: #22b8d6; --bar-ext: #a78bfa;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 48px; }
+header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+  margin: 0 0 10px; font-weight: 600; }
+.sub { color: var(--muted); font-size: 13px; }
+.spacer { flex: 1; }
+.grid { display: grid; grid-template-columns: 2fr 1fr; gap: 14px; }
+@media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; min-width: 0; }
+.span2 { grid-column: 1 / -1; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 99px;
+  font-size: 12px; font-weight: 600; background: var(--line); color: var(--muted); }
+.pill.on { background: var(--on-soft); color: var(--on); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+.pill.bad { background: var(--bad-soft); color: var(--bad); }
+.pill.acc { background: var(--accent-soft); color: var(--accent); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--off); display: inline-block; flex: none; }
+.dot.on { background: var(--on); } .dot.bad { background: var(--bad); }
+.big { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; margin: 2px 0 4px;
+  font-variant-numeric: tabular-nums; }
+.explain { color: var(--muted); margin: 0 0 14px; }
+.btns { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+button { font: inherit; font-weight: 600; border: 1px solid var(--line); background: var(--card); color: var(--text);
+  padding: 7px 12px; border-radius: 8px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.danger { color: var(--bad); }
+button.danger:hover { border-color: var(--bad); }
+button:disabled { opacity: .5; cursor: default; }
+input[type=number] { font: inherit; width: 70px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--text); }
+.setgroup { display: inline-flex; gap: 6px; align-items: center; }
+.sep { width: 1px; align-self: stretch; background: var(--line); margin: 0 2px; }
+@media (max-width: 600px) { .sep { display: none; } }
+.list { display: flex; flex-direction: column; gap: 8px; }
+.row { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.row .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+.muted { color: var(--muted); }
+.nw { white-space: nowrap; }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+@media (max-width: 600px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+.stat .v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.stat .l { color: var(--muted); font-size: 12px; }
+.tl { display: grid; grid-template-columns: 74px 1fr; gap: 6px 10px; align-items: center; }
+.tl .day { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.track { position: relative; height: 18px; background: var(--bg); border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+.seg { position: absolute; top: 0; bottom: 0; background: var(--bar); opacity: .85; min-width: 2px; }
+.seg.ext { background: var(--bar-ext); }
+.seg.open { background-image: repeating-linear-gradient(45deg, transparent 0 4px, rgba(255,255,255,.25) 4px 8px); }
+.mark { position: absolute; top: -1px; bottom: -1px; width: 2px; background: var(--warn); }
+.mark.fail { background: var(--bad); }
+.hours { display: grid; grid-template-columns: 74px 1fr; gap: 10px; margin-top: 4px; }
+.hours .ticks { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; color: var(--muted); font-size: 12px; margin-top: 10px; }
+.legend i { display: inline-block; width: 12px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.tabs { display: flex; gap: 4px; margin-bottom: 10px; flex-wrap: wrap; }
+.tabs button { padding: 5px 10px; font-size: 13px; }
+.tabs button.sel { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th { text-align: left; color: var(--muted); font-weight: 600; font-size: 12px; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+td.nw { white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+.empty { color: var(--muted); padding: 10px 0; }
+.toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--text); color: var(--bg);
+  padding: 9px 14px; border-radius: 9px; font-weight: 600; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 90vw; }
+.toast.show { opacity: 1; }
+select { font: inherit; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--text); }
+.iconbtn { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; font-size: 13px; }
+.iconbtn svg { width: 15px; height: 15px; }
+.iconbtn.spin svg { animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.backdrop { position: fixed; inset: 0; background: rgba(5, 8, 12, .6); backdrop-filter: blur(2px); display: flex; align-items: center; justify-content: center;
+  padding: 16px; opacity: 0; pointer-events: none; transition: opacity .15s; z-index: 10; }
+.backdrop.show { opacity: 1; pointer-events: auto; }
+.dialog { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px; width: 100%; max-width: 420px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, .25); transform: translateY(8px) scale(.98); transition: transform .15s; }
+.backdrop.show .dialog { transform: none; }
+.dialog h3 { margin: 0 0 6px; font-size: 17px; }
+.dialog p { margin: 0 0 18px; color: var(--muted); }
+.dialog .btns { justify-content: flex-end; }
+button.solid-danger { background: var(--bad); border-color: var(--bad); color: #fff; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Wakeproxy</h1>
+    <span id="subtitle" class="sub"></span>
+    <span class="spacer"></span>
+    <span id="updated" class="sub"></span>
+    <button id="refresh" class="iconbtn" title="Refresh now">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>Refresh
+    </button>
+  </header>
+
+  <div class="grid">
+    <section class="card">
+      <h2 id="machineName"></h2>
+      <div class="row"><span id="statePill" class="pill">Checking…</span><span id="managedPill"></span></div>
+      <div id="big" class="big">…</div>
+      <p id="explain" class="explain"></p>
+      <div id="controls" class="btns"></div>
+    </section>
+
+    <section class="card">
+      <h2>Services</h2>
+      <div id="services" class="list"></div>
+      <h2 style="margin-top:16px" id="holdsTitle">Keeping it on</h2>
+      <div id="holds" class="list"></div>
+      <div id="sources"></div>
+    </section>
+
+    <section class="card span2">
+      <div class="row" style="margin-bottom:10px">
+        <h2 style="margin:0">History</h2><span class="spacer"></span>
+        <select id="days">
+          <option value="1">Last 24 hours</option>
+          <option value="7" selected>Last 7 days</option>
+          <option value="30">Last 30 days</option>
+          <option value="90">Last 90 days</option>
+        </select>
+      </div>
+      <div id="stats" class="stats"></div>
+    </section>
+
+    <section class="card span2">
+      <h2 id="timelineTitle">When it was on</h2>
+      <div id="timeline" class="tl"></div>
+      <div class="hours"><span></span><div class="ticks"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div></div>
+      <div class="legend">
+        <span><i style="background:var(--bar)"></i>woken by wakeproxy</span>
+        <span><i style="background:var(--bar-ext)"></i>turned on some other way</span>
+        <span><i style="background:var(--warn)"></i>wake request</span>
+        <span><i style="background:var(--bad)"></i>failed wake</span>
+      </div>
+    </section>
+
+    <section class="card span2">
+      <div class="tabs" id="tabs">
+        <button data-tab="sessions" class="sel">Sessions</button>
+        <button data-tab="events">Events</button>
+        <button data-tab="requests">Requests</button>
+        <button data-tab="clients">By client</button>
+      </div>
+      <div id="tab" class="tablewrap"></div>
+    </section>
+  </div>
+</main>
+<div id="toast" class="toast"></div>
+<div id="backdrop" class="backdrop">
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlgTitle">
+    <h3 id="dlgTitle"></h3>
+    <p id="dlgText"></p>
+    <div class="btns"><button id="dlgCancel">Cancel</button><button id="dlgOk" class="primary"></button></div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let status = null, history = null, tab = "sessions", skew = 0;
+const M = () => esc(status?.machine?.name || "the machine");   // the machine's name, escaped
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+}
+const now = () => Date.now() / 1000 + skew;
+function dur(sec) {
+  sec = Math.max(0, Math.round(sec));
+  const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
+  if (h) return `${h} h ${String(m).padStart(2, "0")} min`;
+  if (m) return s ? `${m} min ${String(s).padStart(2, "0")} s` : `${m} min`;
+  return `${s} s`;
+}
+function clock(sec) {
+  sec = Math.max(0, Math.round(sec));
+  const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
+  return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(s).padStart(2, "0");
+}
+const fmtTime = (ts) => new Date(ts * 1000).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit", hour12: false});
+function fmtWhen(ts) {
+  const d = new Date(ts * 1000), today = new Date();
+  const y = new Date(); y.setDate(today.getDate() - 1);
+  const t = d.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit", hour12: false});
+  if (d.toDateString() === today.toDateString()) return "today " + t;
+  if (d.toDateString() === y.toDateString()) return "yesterday " + t;
+  return d.toLocaleDateString([], {weekday: "short", day: "numeric", month: "short"}) + " " + t;
+}
+function toast(msg) {
+  const t = $("toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("show"), 3500);
+}
+
+// In-page confirmation instead of the browser's confirm(): resolves true or false.
+function ask({title, text, ok, danger}) {
+  const bd = $("backdrop"), okBtn = $("dlgOk"), cancel = $("dlgCancel");
+  $("dlgTitle").textContent = title; $("dlgText").textContent = text || "";
+  okBtn.textContent = ok || "OK"; okBtn.className = danger ? "solid-danger" : "primary";
+  bd.classList.add("show");
+  setTimeout(() => (danger ? cancel : okBtn).focus(), 50);
+  return new Promise((resolve) => {
+    const done = (v) => {
+      bd.classList.remove("show");
+      okBtn.onclick = cancel.onclick = bd.onclick = document.onkeydown = null;
+      resolve(v);
+    };
+    okBtn.onclick = () => done(true);
+    cancel.onclick = () => done(false);
+    bd.onclick = (e) => { if (e.target === bd) done(false); };
+    document.onkeydown = (e) => { if (e.key === "Escape") done(false); };
+  });
+}
+
+async function post(path, body, dialog) {
+  if (dialog && !(await ask(dialog))) return;
+  try {
+    const r = await fetch(path, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body || {})});
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { toast(j.error || `Failed (${r.status})`); return; }
+    status = j; skew = j.now - Date.now() / 1000; renderStatus(); loadHistory();
+  } catch (e) { toast("Request failed: " + e.message); }
+}
+
+async function loadStatus() {
+  try {
+    const r = await fetch("api/status");
+    if (!r.ok) throw new Error(r.status);
+    status = await r.json(); skew = status.now - Date.now() / 1000;
+    renderStatus();
+  } catch (e) { $("updated").textContent = "Can't reach wakeproxy"; }
+}
+async function loadHistory() {
+  try {
+    const r = await fetch("api/history?days=" + $("days").value);
+    history = await r.json(); renderHistory();
+  } catch (e) {}
+}
+
+function trig(t) {
+  if (!t) return "";
+  const parts = [t.client, t.route && t.route !== "localai" ? t.route : null, t.path].filter(Boolean);
+  return parts.join(" → ");
+}
+
+function renderStatus() {
+  if (!status) return;
+  const s = status, t = s.timer, pc = s.pc, n = now();
+  $("updated").textContent = "Updated " + fmtTime(s.now);
+  document.title = `Wakeproxy · ${s.machine.name}`;
+  $("machineName").textContent = s.machine.name;
+  $("subtitle").textContent = `Power for ${s.machine.name}: woken when something needs it, shut down when nothing does`;
+  $("holdsTitle").textContent = `Keeping ${s.machine.name} on`;
+  $("timelineTitle").textContent = `When ${s.machine.name} was on`;
+  const pill = $("statePill"), big = $("big"), ex = $("explain"), ctl = $("controls"), mp = $("managedPill");
+  let cls = "", label = "", bigText = "", explain = "", buttons = "";
+
+  if (pc.up === null) {
+    label = "Checking"; bigText = "…"; explain = `Wakeproxy has just started and is checking ${M()}.`;
+  } else if (pc.waking) {
+    cls = "warn"; label = "Waking";
+    bigText = "Waking · " + dur(n - pc.waking.since);
+    explain = `Wake sent (${esc(s.machine.wake)}) for ${esc(trig(pc.waking.trigger)) || "a request"}. ` +
+      `Waits up to ${dur(s.config.wake_timeout)} for the service to answer.`;
+  } else if (!pc.up) {
+    label = "Off"; bigText = "Off";
+    const ws = s.config.wake_sources;
+    explain = "Anything that needs it wakes it: a request that does work" +
+      (ws.length ? `, ${ws.map(esc).join(", ")} when it has work,` : "") +
+      " or a hold through the API. Other requests, such as model lists and health checks, never do.";
+    buttons = `<button class="primary" data-act="wake">Wake now</button>`;
+  } else if (pc.shutting_down) {
+    cls = "warn"; label = "Shutting down";
+    bigText = "Shutting down";
+    explain = `Shutdown sent (${esc(s.machine.shutdown)}) ${dur(n - pc.shutting_down)} ago. Powering off can take a minute or two.`;
+  } else if (!s.managed) {
+    cls = "on"; label = "On";
+    bigText = "On · no timer";
+    explain = `Wakeproxy did not wake ${M()} this time (or the timer was cancelled), so it will leave it on. Start a timer to have it shut down when idle.`;
+    buttons = `<button class="primary" data-act="auto-on">Shut down when idle (${dur(s.config.idle_seconds)})</button>
+      <span class="setgroup"><span class="muted">or off in</span><input id="setMin" type="number" min="1" max="1440" value="30"><button data-act="set">Set</button></span>
+      <span class="sep"></span><button class="danger" data-act="shutdown">Shut down now</button>`;
+  } else {
+    cls = "on"; label = "On";
+    const left = t.deadline - n;
+    const nh = s.holds.length;
+    if (nh) {
+      bigText = "Kept on";
+      explain = `${nh === 1 ? "One hold is" : nh + " holds are"} keeping it on (listed on the right). ` +
+        `The ${dur(s.config.idle_seconds)} idle timer starts when the last one ends.`;
+    } else if (left > 0) {
+      bigText = "Off in " + clock(left);
+      explain = t.override
+        ? `Timer set by hand: shuts down at ${fmtTime(t.deadline)}. New activity only moves it later, never earlier.`
+        : `Shuts down at ${fmtTime(t.deadline)}, ${dur(s.config.idle_seconds)} after the last activity (${fmtTime(t.last_activity)}). Anything that needs ${M()} restarts the timer.`;
+    } else {
+      bigText = "Shutting down shortly";
+      explain = "The timer ran out; the next check (every 15 s) shuts it down unless a source objects (e.g. someone is signed in).";
+    }
+    buttons = `<button data-act="extend" data-min="15">+15 min</button>
+      <button data-act="extend" data-min="60">+1 h</button>
+      <button data-act="shorten" data-min="5">−5 min</button>
+      <span class="setgroup"><span class="muted">off in</span><input id="setMin" type="number" min="1" max="1440" value="30"><button data-act="set">Set</button></span>
+      ${t.override ? `<button data-act="reset">Back to idle timer</button>` : ""}
+      <span class="sep"></span>
+      <button data-act="auto-off">Keep on (cancel timer)</button>
+      <button class="danger" data-act="shutdown">Shut down now</button>`;
+  }
+  pill.className = "pill " + cls; pill.innerHTML = `<span class="dot ${cls === "on" ? "on" : ""}"></span>${esc(label)}`;
+  mp.innerHTML = pc.up && s.managed ? `<span class="pill acc">auto-off on</span>` : "";
+  big.textContent = bigText; ex.innerHTML = explain;
+  if (ctl.dataset.html !== buttons) {          // keep the minutes field while the countdown ticks
+    ctl.innerHTML = buttons; ctl.dataset.html = buttons;
+  }
+
+  $("services").innerHTML = s.services.map((x) => `
+    <div class="row"><span class="dot ${x.up ? "on" : x.up === false && pc.up ? "bad" : ""}"></span>
+      <span class="grow"><b>${esc(x.name)}</b> <span class="muted mono">${esc(x.upstream.replace(/^https?:\/\//, ""))}</span></span>
+      <span class="muted">${x.up ? "up" : pc.up ? "not answering" : "off"}</span></div>`).join("");
+
+  // Everything keeping the machine on: requests, sources, API holds.
+  $("holds").innerHTML = s.holds.length ? s.holds.map((h) => `
+    <div class="row"><span class="dot on"></span>
+      <span class="grow"><b>${esc(h.source)}</b> ${esc(h.label)}${h.detail ? ` <span class="muted">${esc(h.detail)}</span>` : ""}</span>
+      <span class="muted nw">${dur(n - h.since)}${h.until ? " · until " + fmtTime(h.until) : ""}</span></div>`).join("")
+    : `<div class="empty">Nothing.</div>`;
+
+  // One block per wake source, drawn from what the source reports.
+  $("sources").innerHTML = s.sources.map((src) => `
+    <h2 style="margin-top:16px">${esc(src.name)}</h2>
+    <div class="list">${(src.rows || []).map((r) => `
+      <div class="row"><span class="dot ${r.state || ""}"></span>
+        <span class="grow">${esc(r.text)}${r.detail ? ` <span class="muted">${esc(r.detail)}</span>` : ""}</span>
+        <span class="muted">${esc(r.right || "")}</span></div>`).join("")}
+      ${src.note ? `<div class="empty">${esc(src.note)}</div>` : ""}</div>`).join("");
+}
+
+$("controls").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  const act = b.dataset.act, min = Number(b.dataset.min || 0);
+  if (act === "wake") post("api/wake");
+  else if (act === "extend" || act === "shorten") post("api/timer", {action: act, minutes: min});
+  else if (act === "set") post("api/timer", {action: "set", minutes: Number($("setMin").value)});
+  else if (act === "reset") post("api/timer", {action: "reset"});
+  else if (act === "auto-off") post("api/auto-off", {auto_off: false}, {
+    title: `Keep ${status.machine.name} on?`, ok: "Keep on",
+    text: "Wakeproxy won't shut it down until you start a timer again, or until it next wakes it."});
+  else if (act === "auto-on") post("api/auto-off", {auto_off: true});
+  else if (act === "shutdown") {
+    const held = status.holds;
+    post("api/shutdown", {force: held.length > 0}, held.length
+      ? {title: "Shut down anyway?", ok: "Shut down", danger: true,
+         text: "Still keeping it on: " + held.map((h) => `${h.source}: ${h.label}`).join("; ") + ". These are cut off."}
+      : {title: `Shut ${status.machine.name} down now?`, ok: "Shut down", danger: true,
+         text: "Programs still open on it may be closed."});
+  }
+});
+
+const EVENT_TEXT = {
+  wake: (e) => e.pc_was_up ? `Service not answering; wake sent anyway (${M()} was already on)` :
+    `Wake requested by ${esc(trig(e.trigger)) || "a request"}${e.wol_sent === false ? " — sending the wake failed" + (e.error ? ": " + esc(e.error) : "") : ""}`,
+  wake_ok: (e) => `Ready after ${dur(e.seconds)} (${esc(e.route)})`,
+  wake_failed: (e) => `Did not answer within ${dur(e.seconds)} (${esc(e.route)})`,
+  pc_on: (e) => `${M()} came on (${esc(e.by)})`,
+  pc_off: (e) => `${M()} went off (${esc(e.by)})`,
+  shutdown: (e) => `${e.ok ? "Shutdown sent" : "Shutdown failed"}: ${esc(e.reason)}${e.forced ? " (forced)" : ""}${e.by ? " · " + esc(e.by) : ""}${e.error ? " — " + esc(e.error) : ""}`,
+  shutdown_deferred: (e) => `Shutdown held off: ${esc(e.reason)} (forced at ${fmtTime(e.until)} at the latest)`,
+  shutdown_incomplete: (e) => `Shutdown was sent but ${M()} was still on ${e.minutes} min later`,
+  timer: (e) => ({extend: `Timer extended by ${e.minutes} min`, shorten: `Timer shortened by ${e.minutes} min`,
+    set: `Timer set to ${e.minutes} min`, reset: "Timer back to idle timer"}[e.action] || "Timer changed") +
+    ` → off at ${fmtTime(e.deadline)} · ${esc(e.by)}`,
+  auto_off: (e) => (e.on ? "Auto-off started" : "Auto-off cancelled (keep on)") + " · " + esc(e.by),
+  note: (e) => esc(e.text),
+  proxy_start: (e) => `Wakeproxy started; ${M()} was ${e.pc_up ? "on" : "off"}${e.pc_up && e.managed ? ", timer restored" : ""}`,
+};
+const EVENT_CLASS = {wake: "warn", wake_ok: "on", wake_failed: "bad", pc_on: "on", pc_off: "", shutdown: "acc",
+  shutdown_deferred: "warn", shutdown_incomplete: "bad", timer: "acc", auto_off: "acc", note: (e) => e.level === "warn" ? "warn" : "", proxy_start: ""};
+const EVENT_LABEL = {wake: "wake", wake_ok: "ready", wake_failed: "wake failed", pc_on: "on", pc_off: "off",
+  shutdown: "shutdown", shutdown_deferred: "held off", shutdown_incomplete: "stuck", timer: "timer", auto_off: "auto-off", note: (e) => e.source, proxy_start: "restart"};
+
+// a map entry is a value, or a function of the event
+const pick = (map, e) => typeof map[e.kind] === "function" ? map[e.kind](e) : map[e.kind];
+
+function renderHistory() {
+  if (!history) return;
+  const h = history, wakes = h.events.filter((e) => e.kind === "wake" && !e.pc_was_up);
+  const oks = h.events.filter((e) => e.kind === "wake_ok"), fails = h.events.filter((e) => e.kind === "wake_failed");
+  const onSec = h.sessions.reduce((a, x) => a + ((x.end ?? h.now) - Math.max(x.start, h.since)), 0);
+  const reqs = h.by_client.reduce((a, x) => a + x.count, 0), errs = h.by_client.reduce((a, x) => a + (x.errors || 0), 0);
+  const avg = oks.length ? oks.reduce((a, e) => a + e.seconds, 0) / oks.length : null;
+  $("stats").innerHTML = [
+    [wakes.length, "wakes" + (fails.length ? ` · <span style="color:var(--bad)">${fails.length} failed</span>` : "")],
+    [avg === null ? "–" : dur(avg), "average time to wake"],
+    [onSec ? (onSec / 3600).toFixed(1) + " h" : "0 h", "on"],
+    [reqs, "requests" + (errs ? ` · <span style="color:var(--bad)">${errs} failed</span>` : "")],
+  ].map(([v, l]) => `<div class="stat"><div class="v">${v}</div><div class="l">${l}</div></div>`).join("");
+  renderTimeline(); renderTab();
+}
+
+function renderTimeline() {
+  const h = history, days = Math.min(Number($("days").value), 14), rows = [];
+  const start = new Date(); start.setHours(0, 0, 0, 0);
+  for (let i = 0; i < days; i++) {
+    const d0 = new Date(start); d0.setDate(start.getDate() - i);
+    const d1 = new Date(d0); d1.setDate(d0.getDate() + 1);
+    const a = d0 / 1000, b = d1 / 1000, len = b - a;
+    const segs = h.sessions.filter((x) => (x.end ?? h.now) > a && x.start < b).map((x) => {
+      const s = Math.max(x.start, a), e = Math.min(x.end ?? h.now, b);
+      const ext = x.by && !String(x.by).startsWith("wakeproxy");
+      const title = `${fmtTime(x.start)}–${x.end ? fmtTime(x.end) : "now"} (${dur((x.end ?? h.now) - x.start)}), on: ${x.by}${x.reason ? ", off: " + x.reason : ""}`;
+      return `<div class="seg ${ext ? "ext" : ""} ${x.end ? "" : "open"}" style="left:${(s - a) / len * 100}%;width:${(e - s) / len * 100}%" title="${esc(title)}"></div>`;
+    });
+    const marks = h.events.filter((e) => (e.kind === "wake" && !e.pc_was_up || e.kind === "wake_failed") && e.ts >= a && e.ts < b).map((e) =>
+      `<div class="mark ${e.kind === "wake_failed" ? "fail" : ""}" style="left:${(e.ts - a) / len * 100}%" title="${esc(fmtTime(e.ts) + " " + (e.kind === "wake" ? "wake: " + trig(e.trigger) : "wake failed"))}"></div>`);
+    const label = i === 0 ? "Today" : i === 1 ? "Yesterday" : d0.toLocaleDateString([], {weekday: "short", day: "numeric"});
+    rows.push(`<span class="day">${label}</span><div class="track">${segs.join("")}${marks.join("")}</div>`);
+  }
+  $("timeline").innerHTML = rows.join("");
+}
+
+function renderTab() {
+  const h = history, el = $("tab");
+  if (tab === "sessions") {
+    const rows = [...h.sessions].reverse();
+    el.innerHTML = rows.length ? `<table><tr><th>On</th><th>Off</th><th>Length</th><th>Turned on by</th><th>Why it went off</th><th>Requests</th></tr>` +
+      rows.map((x) => {
+        const n = h.requests.filter((r) => r.start >= x.start && r.start < (x.end ?? h.now)).length;
+        return `<tr><td class="nw">${x.clipped ? "before " : ""}${fmtWhen(x.start)}</td><td class="nw">${x.end ? fmtWhen(x.end) : "<b>still on</b>"}</td>
+          <td class="nw">${dur((x.end ?? h.now) - x.start)}</td><td>${esc(x.by)}</td>
+          <td>${x.end ? esc(x.reason || x.off_by || "") : ""}</td><td>${n}</td></tr>`;
+      }).join("") + "</table>"
+      : `<div class="empty">No on-periods recorded in this range. History starts when this version of wakeproxy was deployed.</div>`;
+  } else if (tab === "events") {
+    el.innerHTML = h.events.length ? `<table><tr><th>When</th><th></th><th>What happened</th></tr>` +
+      h.events.map((e) => `<tr><td class="nw">${fmtWhen(e.ts)}</td><td><span class="pill ${pick(EVENT_CLASS, e) || ""}">${esc(pick(EVENT_LABEL, e) || e.kind)}</span></td>
+        <td>${(EVENT_TEXT[e.kind] || (() => esc(e.kind)))(e)}</td></tr>`).join("") + "</table>"
+      : `<div class="empty">No events in this range.</div>`;
+  } else if (tab === "requests") {
+    el.innerHTML = h.requests.length ? `<table><tr><th>Started</th><th>Client</th><th>Path</th><th>Model</th><th>Took</th><th>Result</th></tr>` +
+      h.requests.map((r) => {
+        const ok = !r.error && r.status && r.status < 400;
+        const res = r.end === null ? `<span class="pill acc">running</span>` :
+          `<span class="pill ${ok ? "on" : "bad"}">${esc(r.status ?? "error")}</span>${r.error ? ` <span class="muted">${esc(r.error)}</span>` : ""}`;
+        return `<tr><td class="nw">${fmtWhen(r.start)}${r.woke ? ' <span class="pill warn">woke it</span>' : ""}</td><td>${esc(r.client)}</td>
+          <td class="mono">${esc((r.route !== "localai" ? "/" + r.route : "") + r.path)}</td><td>${esc(r.model || "")}</td>
+          <td class="nw">${r.end ? dur(r.end - r.start) : dur(h.now - r.start)}</td><td>${res}</td></tr>`;
+      }).join("") + "</table>" + (h.requests.length >= 500 ? `<div class="empty">Showing the newest 500.</div>` : "")
+      : `<div class="empty">No requests in this range.</div>`;
+  } else {
+    el.innerHTML = h.by_client.length ? `<table><tr><th>Client</th><th>Service</th><th>Requests</th><th>Failed</th><th>Total time</th></tr>` +
+      h.by_client.map((c) => `<tr><td>${esc(c.client)}</td><td>${esc(c.route)}</td><td>${c.count}</td><td>${c.errors || 0}</td><td>${dur(c.seconds || 0)}</td></tr>`).join("") + "</table>"
+      : `<div class="empty">No requests in this range.</div>`;
+  }
+}
+
+$("tabs").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  tab = b.dataset.tab;
+  for (const x of $("tabs").children) x.classList.toggle("sel", x === b);
+  renderTab();
+});
+$("days").addEventListener("change", loadHistory);
+
+$("refresh").addEventListener("click", async () => {
+  const b = $("refresh");
+  if (b.classList.contains("spin")) return;
+  b.classList.add("spin");
+  const started = Date.now();
+  await Promise.all([loadStatus(), loadHistory()]);
+  setTimeout(() => b.classList.remove("spin"), Math.max(0, 500 - (Date.now() - started)));
+});
+
+loadStatus(); loadHistory();
+setInterval(loadStatus, 5000);
+setInterval(loadHistory, 30000);
+setInterval(renderStatus, 1000);
+</script>
+</body>
+</html>

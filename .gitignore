@@ -1,0 +1,10 @@
+# local deployment: settings, history, keys
+config.yaml
+data/
+secrets/
+.env
+# Python
+__pycache__/
+*.egg-info/
+build/
+.pytest_cache/

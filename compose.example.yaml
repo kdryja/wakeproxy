@@ -1,0 +1,19 @@
+# wakeproxy as a Compose service. Clients on the same network reach the proxy at
+# http://wakeproxy:8009; put the status page (8010) behind an authenticating reverse proxy.
+services:
+  wakeproxy:
+    build: .
+    container_name: wakeproxy
+    restart: unless-stopped
+    environment:
+      - TZ=UTC                     # your time zone, for times on the status page and in messages
+      - HA_TOKEN=${HA_TOKEN}       # used as ${HA_TOKEN} in config.yaml
+    volumes:
+      - ./config.yaml:/config/config.yaml:ro
+      - ./data:/data               # history database, known_hosts
+      - ./secrets:/secrets:ro      # SSH key
+    expose:
+      - 8009
+      - 8010
+    # The wol plugin sends a broadcast, which needs the host's network:
+    # network_mode: host
