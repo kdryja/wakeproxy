@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Wakeproxy</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%2306b6d4' d='M13 3h-2v10h2V3zm4.83 2.17-1.42 1.42A6.92 6.92 0 0 1 19 12a7 7 0 1 1-11.41-5.42L6.17 5.17A8.93 8.93 0 0 0 3 12a9 9 0 0 0 18 0c0-2.74-1.23-5.18-3.17-6.83z'/%3E%3C/svg%3E">
+<link rel="icon" type="image/svg+xml" href="logo.svg">
 <style>
 :root {
   --bg: #f6f7f9; --card: #ffffff; --text: #1c2330; --muted: #667085; --line: #e4e7ec;
@@ -60,12 +60,13 @@ input[type=number] { font: inherit; width: 70px; padding: 6px 8px; border-radius
 @media (max-width: 600px) { .sep { display: none; } }
 .list { display: flex; flex-direction: column; gap: 8px; }
 .row { display: flex; gap: 8px; align-items: center; min-width: 0; }
-.row .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .grow { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.list .row { align-items: flex-start; }
+.list .row .dot { margin-top: 6px; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
 .muted { color: var(--muted); }
 .nw { white-space: nowrap; }
 .nest { padding-left: 16px; }
-.row .grow.wrap { white-space: normal; }
 .note { color: var(--muted); font-size: 12.5px; padding-left: 16px; }
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 @media (max-width: 600px) { .stats { grid-template-columns: repeat(2, 1fr); } }
@@ -116,6 +117,7 @@ button.solid-danger { background: var(--bad); border-color: var(--bad); color: #
 <body>
 <main>
   <header>
+    <img src="logo.svg" alt="" width="28" height="28" style="border-radius:7px">
     <h1>Wakeproxy</h1>
     <span id="subtitle" class="sub"></span>
     <span class="spacer"></span>
@@ -346,7 +348,7 @@ function renderStatus() {
   // Everything keeping the machine on: requests, sources, API holds.
   $("holds").innerHTML = s.holds.length ? s.holds.map((h) => `
     <div class="row"><span class="dot on"></span>
-      <span class="grow wrap"><b>${esc(h.source)}</b> ${esc(h.label)}${h.detail ? ` <span class="muted">${esc(h.detail)}</span>` : ""}</span>
+      <span class="grow"><b>${esc(h.source)}</b> ${esc(h.label)}${h.detail ? ` <span class="muted">${esc(h.detail)}</span>` : ""}</span>
       <span class="muted nw">${dur(n - h.since)}${h.until ? " · until " + fmtTime(h.until) : ""}</span></div>`).join("")
     : `<div class="empty">Nothing.</div>`;
 
@@ -359,7 +361,7 @@ function renderStatus() {
   ];
   $("sources").innerHTML = entries.map((e) => `
     <div class="row"><span class="dot ${e.state}"></span>
-      <span class="grow wrap"><b>${esc(e.name)}</b> <span class="muted">${esc(e.summary || "")}</span></span>
+      <span class="grow"><b>${esc(e.name)}</b> <span class="muted">${esc(e.summary || "")}</span></span>
       <span class="muted">${esc(e.right || "")}</span></div>
     ${(e.rows || []).map((r) => `<div class="row nest"><span class="dot ${r.state || ""}"></span>
       <span class="grow">${esc(r.text)}${r.detail ? ` <span class="muted">${esc(r.detail)}</span>` : ""}</span>

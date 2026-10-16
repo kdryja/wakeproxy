@@ -1,6 +1,8 @@
-# wakeproxy
+<p align="center"><img src="wakeproxy/static/logo.svg" alt="wakeproxy logo" width="112"></p>
 
-Wakes a machine when something needs it, and shuts it down when nothing does.
+<h1 align="center">wakeproxy</h1>
+
+<p align="center">Wakes a machine when something needs it, and shuts it down when nothing does.</p>
 
 Made for a GPU desktop that serves models (LocalAI, Ollama, Whisper…) and media jobs (Tdarr) to a
 home server, but should stay off when idle. Clients talk to wakeproxy instead of the machine:

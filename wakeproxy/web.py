@@ -10,7 +10,7 @@ from aiohttp import web
 
 from . import events as event_text
 
-PAGE = resources.files("wakeproxy").joinpath("static/index.html")
+STATIC = resources.files("wakeproxy").joinpath("static")
 
 
 def make_app(ctl):
@@ -31,8 +31,12 @@ def make_app(ctl):
         return web.json_response(ctl.status())
 
     async def index(request):
-        return web.Response(text=PAGE.read_text(), content_type="text/html",
+        return web.Response(text=STATIC.joinpath("index.html").read_text(), content_type="text/html",
                             headers={"Cache-Control": "no-cache"})
+
+    async def logo(request):
+        return web.Response(text=STATIC.joinpath("logo.svg").read_text(), content_type="image/svg+xml",
+                            headers={"Cache-Control": "max-age=86400"})
 
     async def status(request):
         return answer()
@@ -109,6 +113,7 @@ def make_app(ctl):
 
     app = web.Application(middlewares=[guard])
     app.router.add_get("/", index)
+    app.router.add_get("/logo.svg", logo)
     app.router.add_get("/api/status", status)
     app.router.add_get("/api/history", history)
     app.router.add_post("/api/timer", timer)
