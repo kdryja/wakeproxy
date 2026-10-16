@@ -189,3 +189,4 @@ def test_status_lists_holds_and_sources():
     assert st["machine"]["name"] == "TestPC"
     assert st["holds"][0]["source"] == "localai" and st["holds"][0]["detail"] == "llama"
     assert st["config"]["wake_sources"] == []        # the objector does not wake
+    assert st["sources"] == [{"name": "Desk", "type": "objector", "wakes": False, "summary": "objector"}]

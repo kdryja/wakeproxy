@@ -1,8 +1,7 @@
 """Windows: don't shut down under someone who is using the machine."""
 import asyncio
-import time
 
-from . import Source
+from . import Source, at
 from .ssh import Ssh
 
 
@@ -58,7 +57,7 @@ class WindowsSession(Source):
         if self.since is None:
             self.since = now
             ctx.event("Shutdown held off: someone is signed in and the screen is unlocked "
-                      f"(shuts down anyway at {hhmm(now + self.max_seconds)})")
+                      f"(shuts down anyway at {at(now + self.max_seconds)})")
         if now - self.since > self.max_seconds:
             ctx.event(f"Unlocked for over {self.max_seconds / 3600:g} h: shutting down anyway", "warn")
             self.since = None
@@ -66,14 +65,20 @@ class WindowsSession(Source):
         idle = ctx.idle_seconds
         # No grace: when the hold ends the timer has already run out, so this check runs again.
         ctx.hold("session", "Someone is signed in and the screen is unlocked",
-                 detail=f"checked every {idle // 60} min; shuts down anyway at {hhmm(self.since + self.max_seconds)}",
+                 detail=f"checked every {idle // 60} min; shuts down anyway at {at(self.since + self.max_seconds)}",
                  until=min(now + idle, self.since + self.max_seconds), grace=False)
+
+    def describe(self):
+        return "checks for someone signed in before each shutdown"
+
+    def status(self):
+        if self.since:
+            return {"summary": "someone is signed in and the screen is unlocked", "state": "on",
+                    "note": f"Holding off the shutdown since {at(self.since)}; "
+                            f"shuts down anyway at {at(self.since + self.max_seconds)}."}
+        return {"summary": self.describe()}
 
     async def poll(self):
         if not self.ctx.pc_up or not self.ctx.managed:
             self.since = None
             self.ctx.release()
-
-
-def hhmm(ts):
-    return time.strftime("%H:%M", time.localtime(ts))

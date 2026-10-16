@@ -16,7 +16,7 @@ import os
 import time
 import zlib
 
-from . import Source
+from . import Source, at
 
 
 def plural(n, word):
@@ -135,29 +135,29 @@ class Tdarr(Source):
 
     def status(self):
         if self.error:
-            return {"rows": [{"text": "Can't reach the Tdarr server", "right": self.error, "state": "bad"}]}
+            return {"summary": "can't reach the Tdarr server", "state": "bad", "note": self.error}
         if not self.checked:
-            return {"rows": [], "note": "Checking…"}
+            return {"summary": "checking…"}
         q = self.last
-        rows = [{"text": "%d queued" % q["queued"] if q["queued"] else "Queue empty",
-                 "detail": "%d transcode, %d health check" % (q["transcode"], q["health"]) if q["queued"] else "",
-                 "right": "node %s %s" % (self.node, "connected" if q["connected"] else "offline"),
-                 "state": "on" if q["connected"] else None}]
+        queue = ("%d queued (%d transcode, %d health check)" % (q["queued"], q["transcode"], q["health"])
+                 if q["queued"] else "queue empty")
+        node = "node %s %s" % (self.node, "connected" if q["connected"] else "offline")
+        rows = []
         for j in q["jobs"]:
             pct = j["percentage"]
             rows.append({"text": j["file"], "detail": j["step"] or "", "state": "on",
                          "right": (j["type"] or "") + (" · %d%%" % pct if pct else "")})
-        hhmm = lambda ts: time.strftime("%H:%M", time.localtime(ts))
         blocked, note = self.ctx.store.get("blocked"), None
         if blocked:
             note = ("Won't wake the machine for this queue: %s (%s). Any change to the queue turns wakes "
-                    "back on." % (blocked["reason"], hhmm(blocked["since"])))
+                    "back on." % (blocked["reason"], at(blocked["since"])))
         elif q["paused"]:
             note = "Won't wake the machine: %s." % q["paused"]
         elif self.pending_since:
-            note = "Waking the machine at %s unless the queue empties first." % hhmm(self.pending_since + self.settle)
+            note = "Waking the machine at %s unless the queue empties first." % at(self.pending_since + self.settle)
         elif self.idle_since:
             note = ("Waiting for the node to take the queued work; gives up at %s."
-                    % hhmm(self.idle_since + self.stuck))
-        return {"rows": rows, "note": note}
+                    % at(self.idle_since + self.stuck))
+        return {"summary": queue + " · " + node, "state": "on" if q["connected"] else None,
+                "rows": rows, "note": note}
 

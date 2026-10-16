@@ -400,7 +400,7 @@ class Controller:
             "services": [{"name": r.name, "upstream": r.upstream,
                           **self.services.get(r.name, {"up": None, "checked": None})}
                          for r in self.cfg.routes],
-            "sources": [{"name": s.name, **st} for s in self.sources if (st := s.status())],
+            "sources": [{"name": s.name, "type": s.type, "wakes": s.wakes, **s.status()} for s in self.sources],
             "config": {"idle_seconds": self.cfg.idle_seconds, "wake_timeout": self.cfg.wake_timeout,
                        "history_days": self.cfg.request_days,
                        "wake_sources": [s.name for s in self.sources if getattr(s, "wakes", True)]},

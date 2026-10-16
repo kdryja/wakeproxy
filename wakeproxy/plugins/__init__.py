@@ -24,6 +24,12 @@ import sys
 KINDS = ("power_on", "power_off", "check", "source")
 
 
+def at(ts):
+    """A time inside text for the status page (hold labels and details, notes, events): the page
+    shows it as a clock time in the viewer's time zone."""
+    return "{time:%d}" % ts
+
+
 class Plugin:
     kind = None
     type = None
@@ -86,9 +92,11 @@ class Source(Plugin):
         """The machine went off; `by` is "wakeproxy" or "outside wakeproxy"."""
 
     def status(self):
-        """What the status page shows for this source, or None for nothing:
-        {"rows": [{"text", "detail", "right", "state": "on" | "bad" | None}], "note": str}"""
-        return None
+        """This source's line on the status page, listed with the routes:
+        {"summary": "one line", "state": "on" | "bad" | None,
+         "rows": [{"text", "detail", "right", "state"}],   # optional details below it
+         "note": "optional remark"}"""
+        return {"summary": self.describe()}
 
 
 def builtin_plugins():

@@ -64,6 +64,9 @@ input[type=number] { font: inherit; width: 70px; padding: 6px 8px; border-radius
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
 .muted { color: var(--muted); }
 .nw { white-space: nowrap; }
+.nest { padding-left: 16px; }
+.row .grow.wrap { white-space: normal; }
+.note { color: var(--muted); font-size: 12.5px; padding-left: 16px; }
 .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 @media (max-width: 600px) { .stats { grid-template-columns: repeat(2, 1fr); } }
 .stat .v { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -132,11 +135,10 @@ button.solid-danger { background: var(--bad); border-color: var(--bad); color: #
     </section>
 
     <section class="card">
-      <h2>Services</h2>
-      <div id="services" class="list"></div>
-      <h2 style="margin-top:16px" id="holdsTitle">Keeping it on</h2>
+      <h2 id="holdsTitle">Keeping it on</h2>
       <div id="holds" class="list"></div>
-      <div id="sources"></div>
+      <h2 style="margin-top:16px">Services and sources</h2>
+      <div id="sources" class="list"></div>
     </section>
 
     <section class="card span2">
@@ -190,7 +192,8 @@ let status = null, history = null, tab = "sessions", skew = 0;
 const M = () => esc(status?.machine?.name || "the machine");   // the machine's name, escaped
 
 function esc(s) {
-  return String(s ?? "").replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]))
+    .replace(/\{time:(\d+)\}/g, (_, ts) => fmtTime(Number(ts)));   // times from the server, in local time
 }
 const now = () => Date.now() / 1000 + skew;
 function dur(sec) {
@@ -266,7 +269,7 @@ async function loadHistory() {
 
 function trig(t) {
   if (!t) return "";
-  const parts = [t.client, t.route && t.route !== "localai" ? t.route : null, t.path].filter(Boolean);
+  const parts = [t.client, t.route, t.path].filter(Boolean);
   return parts.join(" → ");
 }
 
@@ -340,26 +343,28 @@ function renderStatus() {
     ctl.innerHTML = buttons; ctl.dataset.html = buttons;
   }
 
-  $("services").innerHTML = s.services.map((x) => `
-    <div class="row"><span class="dot ${x.up ? "on" : x.up === false && pc.up ? "bad" : ""}"></span>
-      <span class="grow"><b>${esc(x.name)}</b> <span class="muted mono">${esc(x.upstream.replace(/^https?:\/\//, ""))}</span></span>
-      <span class="muted">${x.up ? "up" : pc.up ? "not answering" : "off"}</span></div>`).join("");
-
   // Everything keeping the machine on: requests, sources, API holds.
   $("holds").innerHTML = s.holds.length ? s.holds.map((h) => `
     <div class="row"><span class="dot on"></span>
-      <span class="grow"><b>${esc(h.source)}</b> ${esc(h.label)}${h.detail ? ` <span class="muted">${esc(h.detail)}</span>` : ""}</span>
+      <span class="grow wrap"><b>${esc(h.source)}</b> ${esc(h.label)}${h.detail ? ` <span class="muted">${esc(h.detail)}</span>` : ""}</span>
       <span class="muted nw">${dur(n - h.since)}${h.until ? " · until " + fmtTime(h.until) : ""}</span></div>`).join("")
     : `<div class="empty">Nothing.</div>`;
 
-  // One block per wake source, drawn from what the source reports.
-  $("sources").innerHTML = s.sources.map((src) => `
-    <h2 style="margin-top:16px">${esc(src.name)}</h2>
-    <div class="list">${(src.rows || []).map((r) => `
-      <div class="row"><span class="dot ${r.state || ""}"></span>
-        <span class="grow">${esc(r.text)}${r.detail ? ` <span class="muted">${esc(r.detail)}</span>` : ""}</span>
-        <span class="muted">${esc(r.right || "")}</span></div>`).join("")}
-      ${src.note ? `<div class="empty">${esc(src.note)}</div>` : ""}</div>`).join("");
+  // Everything that can need the machine, in one list: routes (requests through the proxy)
+  // and sources (plugins), each with what it reports about itself.
+  const entries = [
+    ...s.services.map((x) => ({name: x.name, summary: "requests · " + x.upstream.replace(/^https?:\/\//, ""),
+      right: x.up ? "up" : pc.up ? "not answering" : "off", state: x.up ? "on" : x.up === false && pc.up ? "bad" : ""})),
+    ...s.sources.map((x) => ({name: x.name, summary: x.summary, state: x.state || "", rows: x.rows, note: x.note})),
+  ];
+  $("sources").innerHTML = entries.map((e) => `
+    <div class="row"><span class="dot ${e.state}"></span>
+      <span class="grow wrap"><b>${esc(e.name)}</b> <span class="muted">${esc(e.summary || "")}</span></span>
+      <span class="muted">${esc(e.right || "")}</span></div>
+    ${(e.rows || []).map((r) => `<div class="row nest"><span class="dot ${r.state || ""}"></span>
+      <span class="grow">${esc(r.text)}${r.detail ? ` <span class="muted">${esc(r.detail)}</span>` : ""}</span>
+      <span class="muted">${esc(r.right || "")}</span></div>`).join("")}
+    ${e.note ? `<div class="note">${esc(e.note)}</div>` : ""}`).join("");
 }
 
 $("controls").addEventListener("click", (e) => {
@@ -382,31 +387,6 @@ $("controls").addEventListener("click", (e) => {
          text: "Programs still open on it may be closed."});
   }
 });
-
-const EVENT_TEXT = {
-  wake: (e) => e.pc_was_up ? `Service not answering; wake sent anyway (${M()} was already on)` :
-    `Wake requested by ${esc(trig(e.trigger)) || "a request"}${e.wol_sent === false ? " — sending the wake failed" + (e.error ? ": " + esc(e.error) : "") : ""}`,
-  wake_ok: (e) => `Ready after ${dur(e.seconds)} (${esc(e.route)})`,
-  wake_failed: (e) => `Did not answer within ${dur(e.seconds)} (${esc(e.route)})`,
-  pc_on: (e) => `${M()} came on (${esc(e.by)})`,
-  pc_off: (e) => `${M()} went off (${esc(e.by)})`,
-  shutdown: (e) => `${e.ok ? "Shutdown sent" : "Shutdown failed"}: ${esc(e.reason)}${e.forced ? " (forced)" : ""}${e.by ? " · " + esc(e.by) : ""}${e.error ? " — " + esc(e.error) : ""}`,
-  shutdown_deferred: (e) => `Shutdown held off: ${esc(e.reason)} (forced at ${fmtTime(e.until)} at the latest)`,
-  shutdown_incomplete: (e) => `Shutdown was sent but ${M()} was still on ${e.minutes} min later`,
-  timer: (e) => ({extend: `Timer extended by ${e.minutes} min`, shorten: `Timer shortened by ${e.minutes} min`,
-    set: `Timer set to ${e.minutes} min`, reset: "Timer back to idle timer"}[e.action] || "Timer changed") +
-    ` → off at ${fmtTime(e.deadline)} · ${esc(e.by)}`,
-  auto_off: (e) => (e.on ? "Auto-off started" : "Auto-off cancelled (keep on)") + " · " + esc(e.by),
-  note: (e) => esc(e.text),
-  proxy_start: (e) => `Wakeproxy started; ${M()} was ${e.pc_up ? "on" : "off"}${e.pc_up && e.managed ? ", timer restored" : ""}`,
-};
-const EVENT_CLASS = {wake: "warn", wake_ok: "on", wake_failed: "bad", pc_on: "on", pc_off: "", shutdown: "acc",
-  shutdown_deferred: "warn", shutdown_incomplete: "bad", timer: "acc", auto_off: "acc", note: (e) => e.level === "warn" ? "warn" : "", proxy_start: ""};
-const EVENT_LABEL = {wake: "wake", wake_ok: "ready", wake_failed: "wake failed", pc_on: "on", pc_off: "off",
-  shutdown: "shutdown", shutdown_deferred: "held off", shutdown_incomplete: "stuck", timer: "timer", auto_off: "auto-off", note: (e) => e.source, proxy_start: "restart"};
-
-// a map entry is a value, or a function of the event
-const pick = (map, e) => typeof map[e.kind] === "function" ? map[e.kind](e) : map[e.kind];
 
 function renderHistory() {
   if (!history) return;
@@ -438,7 +418,7 @@ function renderTimeline() {
       return `<div class="seg ${ext ? "ext" : ""} ${x.end ? "" : "open"}" style="left:${(s - a) / len * 100}%;width:${(e - s) / len * 100}%" title="${esc(title)}"></div>`;
     });
     const marks = h.events.filter((e) => (e.kind === "wake" && !e.pc_was_up || e.kind === "wake_failed") && e.ts >= a && e.ts < b).map((e) =>
-      `<div class="mark ${e.kind === "wake_failed" ? "fail" : ""}" style="left:${(e.ts - a) / len * 100}%" title="${esc(fmtTime(e.ts) + " " + (e.kind === "wake" ? "wake: " + trig(e.trigger) : "wake failed"))}"></div>`);
+      `<div class="mark ${e.kind === "wake_failed" ? "fail" : ""}" style="left:${(e.ts - a) / len * 100}%" title="${esc(fmtTime(e.ts) + " " + e.text)}"></div>`);
     const label = i === 0 ? "Today" : i === 1 ? "Yesterday" : d0.toLocaleDateString([], {weekday: "short", day: "numeric"});
     rows.push(`<span class="day">${label}</span><div class="track">${segs.join("")}${marks.join("")}</div>`);
   }
@@ -459,17 +439,17 @@ function renderTab() {
       : `<div class="empty">No on-periods recorded in this range. History starts when this version of wakeproxy was deployed.</div>`;
   } else if (tab === "events") {
     el.innerHTML = h.events.length ? `<table><tr><th>When</th><th></th><th>What happened</th></tr>` +
-      h.events.map((e) => `<tr><td class="nw">${fmtWhen(e.ts)}</td><td><span class="pill ${pick(EVENT_CLASS, e) || ""}">${esc(pick(EVENT_LABEL, e) || e.kind)}</span></td>
-        <td>${(EVENT_TEXT[e.kind] || (() => esc(e.kind)))(e)}</td></tr>`).join("") + "</table>"
+      h.events.map((e) => `<tr><td class="nw">${fmtWhen(e.ts)}</td><td><span class="pill ${esc(e.level)}">${esc(e.label)}</span></td>
+        <td>${esc(e.text)}</td></tr>`).join("") + "</table>"
       : `<div class="empty">No events in this range.</div>`;
   } else if (tab === "requests") {
-    el.innerHTML = h.requests.length ? `<table><tr><th>Started</th><th>Client</th><th>Path</th><th>Model</th><th>Took</th><th>Result</th></tr>` +
+    el.innerHTML = h.requests.length ? `<table><tr><th>Started</th><th>Client</th><th>Service</th><th>Path</th><th>Model</th><th>Took</th><th>Result</th></tr>` +
       h.requests.map((r) => {
         const ok = !r.error && r.status && r.status < 400;
         const res = r.end === null ? `<span class="pill acc">running</span>` :
           `<span class="pill ${ok ? "on" : "bad"}">${esc(r.status ?? "error")}</span>${r.error ? ` <span class="muted">${esc(r.error)}</span>` : ""}`;
-        return `<tr><td class="nw">${fmtWhen(r.start)}${r.woke ? ' <span class="pill warn">woke it</span>' : ""}</td><td>${esc(r.client)}</td>
-          <td class="mono">${esc((r.route !== "localai" ? "/" + r.route : "") + r.path)}</td><td>${esc(r.model || "")}</td>
+        return `<tr><td class="nw">${fmtWhen(r.start)}${r.woke ? ' <span class="pill warn">woke it</span>' : ""}</td><td>${esc(r.client)}</td><td>${esc(r.route)}</td>
+          <td class="mono">${esc(r.full_path)}</td><td>${esc(r.model || "")}</td>
           <td class="nw">${r.end ? dur(r.end - r.start) : dur(h.now - r.start)}</td><td>${res}</td></tr>`;
       }).join("") + "</table>" + (h.requests.length >= 500 ? `<div class="empty">Showing the newest 500.</div>` : "")
       : `<div class="empty">No requests in this range.</div>`;

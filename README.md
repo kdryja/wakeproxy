@@ -120,7 +120,8 @@ The JSON fields:
 - `wake` (default `true`).
 - `ready`: a route name to wait for, instead of just the machine.
 
-API holds survive a restart of wakeproxy. With `proxy.hold_token` set, these calls need
+API holds survive a restart of wakeproxy. Times in all JSON answers (`until`, `since`,
+`deadline`…) are Unix times in seconds. With `proxy.hold_token` set, these calls need
 `Authorization: Bearer <token>`.
 
 ## Security
@@ -181,7 +182,11 @@ sources:
 Sources may also implement:
 - `before_shutdown()`: take a hold to stop a shutdown;
 - `on_machine_off(by)`;
-- `status()`: what the status page shows for the source.
+- `status()`: the source's line in the status page's list, `{"summary", "state", "rows", "note"}`.
+  The default shows `describe()`.
+
+Times inside texts for the page (hold labels, notes, `status()`) should be written with
+`wakeproxy.plugins.at(ts)`, so the page shows them in the viewer's time zone.
 
 Wake, shutdown and check plugins subclass `PowerOn`, `PowerOff` and `Check`, implementing
 `power_on()`, `power_off(force)` and `check()`. The built-ins in `wakeproxy/plugins/` are short

@@ -88,11 +88,12 @@ def test_running_jobs_hold_the_machine_on():
         await src.poll()
         [h] = ctl.active_holds()
         assert h["source"] == "Tdarr" and h["label"] == "1 job running" and h["detail"] == "a.mkv"
+        assert src.status()["rows"][0]["text"] == "a.mkv"
         fake.workers = []
         await src.poll()
         assert ctl.active_holds() == []
-        rows = src.status()["rows"]
-        assert rows[0]["text"] == "Queue empty" and "connected" in rows[0]["right"]
+        st = src.status()
+        assert st["summary"] == "queue empty · node PC connected" and st["state"] == "on"
         await teardown(server, ctl)
     asyncio.run(go())
 
@@ -145,6 +146,6 @@ def test_unreachable_server_releases_and_reports():
         assert ctl.active_holds()
         await server.close()
         await src.poll()
-        assert ctl.active_holds() == [] and src.status()["rows"][0]["state"] == "bad"
+        assert ctl.active_holds() == [] and src.status()["state"] == "bad"
         await ctl.http.close()
     asyncio.run(go())
