@@ -2,7 +2,7 @@
 # http://wakeproxy:8009; put the status page (8010) behind an authenticating reverse proxy.
 services:
   wakeproxy:
-    image: ghcr.io/OWNER/wakeproxy:latest     # or build: . from a clone
+    image: ghcr.io/kdryja/wakeproxy:latest     # or build: . from a clone
     container_name: wakeproxy
     restart: unless-stopped
     environment:

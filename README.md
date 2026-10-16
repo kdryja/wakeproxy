@@ -5,8 +5,8 @@
 <p align="center">Wakes a machine when something needs it, and shuts it down when nothing does.</p>
 
 <p align="center">
-  <a href="https://github.com/OWNER/wakeproxy/actions/workflows/tests.yml"><img src="https://github.com/OWNER/wakeproxy/actions/workflows/tests.yml/badge.svg" alt="tests"></a>
-  <a href="https://github.com/OWNER/wakeproxy/pkgs/container/wakeproxy"><img src="https://github.com/OWNER/wakeproxy/actions/workflows/image.yml/badge.svg" alt="image"></a>
+  <a href="https://github.com/kdryja/wakeproxy/actions/workflows/tests.yml"><img src="https://github.com/kdryja/wakeproxy/actions/workflows/tests.yml/badge.svg" alt="tests"></a>
+  <a href="https://github.com/kdryja/wakeproxy/pkgs/container/wakeproxy"><img src="https://github.com/kdryja/wakeproxy/actions/workflows/image.yml/badge.svg" alt="image"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
 </p>
 
@@ -47,21 +47,21 @@ chosen in the config file.
 
 ## Quick start (Docker)
 
-Images for amd64 and arm64 are on GitHub's registry: `ghcr.io/OWNER/wakeproxy:latest` (the newest
+Images for amd64 and arm64 are on GitHub's registry: `ghcr.io/kdryja/wakeproxy:latest` (the newest
 release), `:1` or `:1.0` to stay on a major or minor version, and `:main` for the newest commit.
 
 ```bash
-curl -O https://raw.githubusercontent.com/OWNER/wakeproxy/main/config.example.yaml
+curl -O https://raw.githubusercontent.com/kdryja/wakeproxy/main/config.example.yaml
 mv config.example.yaml config.yaml      # then edit it
 docker run -d --name wakeproxy -p 8009:8009 -p 8010:8010 \
   -v $PWD/config.yaml:/config/config.yaml:ro -v $PWD/data:/data -v $PWD/secrets:/secrets:ro \
-  ghcr.io/OWNER/wakeproxy:latest
+  ghcr.io/kdryja/wakeproxy:latest
 ```
 
 Check a config without starting anything:
 
 ```bash
-docker run --rm -v $PWD/config.yaml:/config/config.yaml:ro ghcr.io/OWNER/wakeproxy:latest \
+docker run --rm -v $PWD/config.yaml:/config/config.yaml:ro ghcr.io/kdryja/wakeproxy:latest \
   python -m wakeproxy --check
 ```
 
