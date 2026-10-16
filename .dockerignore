@@ -5,3 +5,4 @@ secrets
 .git
 tests
 **/__pycache__
+docs

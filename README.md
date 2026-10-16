@@ -4,6 +4,14 @@
 
 <p align="center">Wakes a machine when something needs it, and shuts it down when nothing does.</p>
 
+<p align="center">
+  <a href="https://github.com/OWNER/wakeproxy/actions/workflows/tests.yml"><img src="https://github.com/OWNER/wakeproxy/actions/workflows/tests.yml/badge.svg" alt="tests"></a>
+  <a href="https://github.com/OWNER/wakeproxy/pkgs/container/wakeproxy"><img src="https://github.com/OWNER/wakeproxy/actions/workflows/image.yml/badge.svg" alt="image"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
+</p>
+
+![The status page: what keeps the machine on, its services and sources, and a week of history](docs/screenshot.png)
+
 Made for a GPU desktop that serves models (LocalAI, Ollama, Whisper…) and media jobs (Tdarr) to a
 home server, but should stay off when idle. Clients talk to wakeproxy instead of the machine:
 
@@ -39,19 +47,25 @@ chosen in the config file.
 
 ## Quick start (Docker)
 
+Images for amd64 and arm64 are on GitHub's registry: `ghcr.io/OWNER/wakeproxy:latest` (the newest
+release), `:1` or `:1.0` to stay on a major or minor version, and `:main` for the newest commit.
+
 ```bash
-cp config.example.yaml config.yaml      # then edit it
-docker build -t wakeproxy .
+curl -O https://raw.githubusercontent.com/OWNER/wakeproxy/main/config.example.yaml
+mv config.example.yaml config.yaml      # then edit it
 docker run -d --name wakeproxy -p 8009:8009 -p 8010:8010 \
   -v $PWD/config.yaml:/config/config.yaml:ro -v $PWD/data:/data -v $PWD/secrets:/secrets:ro \
-  wakeproxy
+  ghcr.io/OWNER/wakeproxy:latest
 ```
 
 Check a config without starting anything:
 
 ```bash
-docker run --rm -v $PWD/config.yaml:/config/config.yaml:ro wakeproxy python -m wakeproxy --check
+docker run --rm -v $PWD/config.yaml:/config/config.yaml:ro ghcr.io/OWNER/wakeproxy:latest \
+  python -m wakeproxy --check
 ```
+
+Or build it yourself from a clone: `docker build -t wakeproxy .`
 
 Then point your clients at `http://<wakeproxy>:8009` instead of the machine. For example, an
 OpenAI-style client gets `http://wakeproxy:8009/v1`, and a second service on another prefix gets
@@ -202,7 +216,12 @@ pytest
 ```
 
 The tests use a fake clock, a fake machine, a fake Tdarr server and a fake upstream service, so
-they need nothing else running.
+they need nothing else running. GitHub Actions runs them on Python 3.11 to 3.13 for every push
+(`.github/workflows/tests.yml`), and `image.yml` publishes the image: `:main` for every push to
+`main`, version tags for a release. To release, tag a commit `v1.2.3` and push the tag.
+
+The screenshot is made with `python docs/demo.py > demo.html` (made-up data run through the real
+code), opened in a browser 1200 px wide.
 
 ## License
 
