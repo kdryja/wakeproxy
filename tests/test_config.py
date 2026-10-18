@@ -30,8 +30,8 @@ def test_example_config_loads_and_builds(monkeypatch):
     data = yaml.safe_load((ROOT / "config.example.yaml").read_text())
     ctl = build(data)
     assert ctl.cfg.name == "MyPC"
-    assert [r.name for r in ctl.cfg.routes] == ["ollama", "whisper"]
-    assert [s.name for s in ctl.sources] == ["Tdarr", "Windows session"]
+    assert [r.name for r in ctl.cfg.routes] == ["ollama", "whisper", "comfyui"]
+    assert [s.name for s in ctl.sources] == ["Tdarr", "ComfyUI", "Windows session"]
     assert ctl.cfg.idle_seconds == 600
 
 
@@ -110,6 +110,14 @@ def test_routes():
     assert ctl.route_for("/v1/models").name == "llm"
     assert ctl.cfg.routes[0].upstream == "http://pc:1"
     assert ctl.cfg.routes[1].work_methods == ["POST", "PUT"]
+    assert not ctl.cfg.routes[0].work_websockets
+
+
+def test_route_websockets():
+    ctl = build(minimal(routes=[{"name": "c", "upstream": "http://pc:3", "work": {"websockets": True}}]))
+    assert ctl.cfg.routes[0].work_websockets
+    with pytest.raises(config.ConfigError, match=r"routes\[0\]\.work\.websockets: expected bool"):
+        build(minimal(routes=[{"name": "c", "upstream": "http://pc:3", "work": {"websockets": "yes"}}]))
 
 
 def test_route_without_default_gives_none():

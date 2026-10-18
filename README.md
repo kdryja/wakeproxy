@@ -34,7 +34,8 @@ Everything that needs the machine takes a **hold**:
 | Source of the hold | Held while |
 |---|---|
 | A request through the proxy that does work | the request runs |
-| A wake source (plugin), e.g. `tdarr` | it says so (Tdarr: jobs running or work queued) |
+| A websocket through the proxy, on a route with `work.websockets` | the connection is open |
+| A wake source (plugin), e.g. `tdarr` | it says so (Tdarr: jobs running or work queued; ComfyUI: jobs running or waiting) |
 | `windows_session` | someone is signed in with the screen unlocked (at most `max_hours`) |
 | The hold API | the time given, or until released |
 
@@ -88,7 +89,10 @@ wakeproxy at startup with the place in the file, e.g.
   forwarding). Each route has:
   - `upstream` and `health` (the URL to check);
   - `timeout`;
-  - `work`: which methods and path prefixes do work, i.e. wake and hold;
+  - `work`: which methods and path prefixes do work, i.e. wake and hold. Websockets are passed
+    through; with `websockets: true`, opening one does work too and holds the machine until it
+    closes. That suits clients that open one per job (Open WebUI with ComfyUI). Leave it off for
+    clients that keep one open all the time, or the machine never shuts down;
   - `while_off`: the answer to other requests while the machine is off. `cache_health` answers
     `GET <health>` with its last response.
 - `sources`: wake sources. `name` (optional) is shown on the status page.
@@ -111,6 +115,7 @@ wakeproxy at startup with the place in the file, e.g.
 | up_check | `ssh` | A command over SSH succeeds | `target`, `key`, `command` |
 | up_check | `command` | A shell command exits with 0 | `command` |
 | source | `tdarr` | Tdarr's queue wakes the machine; running jobs (and queued work, for up to `stuck_minutes`) keep it on. Pausing the node in Tdarr stops the wakes | `url`, `node`, `stuck_minutes`, `settle_minutes` |
+| source | `comfyui` | Running and waiting jobs in ComfyUI's queue keep the machine on; never wakes it (the queue is on the machine). `free_after_minutes` unloads ComfyUI's models once the queue has been empty that long | `url`, `free_after_minutes` |
 | source | `windows_session` | A signed-in, unlocked Windows session holds off the shutdown (for `max_hours`); a signed-in, locked one makes it forced | `target`, `key`, `known_hosts`, `max_hours`, `session_command`, `lock_command` |
 
 The `force` variants of shutdown are used when a source reports that someone is signed in, so
@@ -215,8 +220,9 @@ pip install -e '.[test]'
 pytest
 ```
 
-The tests use a fake clock, a fake machine, a fake Tdarr server and a fake upstream service, so
-they need nothing else running. GitHub Actions runs them on Python 3.11 to 3.13 for every push
+The tests use a fake clock, a fake machine, fake Tdarr and ComfyUI servers and a fake upstream
+service (HTTP and websockets), so they need nothing else running. GitHub Actions runs them on
+Python 3.11 to 3.13 for every push
 (`.github/workflows/tests.yml`), and `image.yml` publishes the image: `:main` for every push to
 `main`, version tags for a release. To release, tag a commit `v1.2.3` and push the tag.
 

@@ -4,6 +4,10 @@ A request that does work (by its route's `work` rule) holds the machine on while
 wakes it first if needed. Everything else is passed through while the machine is up; while it is
 off, the route's `while_off` answer is returned, and the machine is never woken for it.
 
+Websockets are passed through: messages are copied both ways until either side closes. With the
+route's `work.websockets`, opening one counts as work: it wakes the machine and holds it until the
+connection closes.
+
 Hold API (same port): POST /_wakeproxy/hold/<name> {"minutes", "reason", "wake", "ready"} keeps the
 machine on, DELETE /_wakeproxy/hold/<name> ends it, GET /_wakeproxy/status shows the state.
 """
@@ -12,7 +16,7 @@ import json
 import logging
 import socket
 
-from aiohttp import ClientSession, ClientTimeout, web
+from aiohttp import ClientSession, ClientTimeout, WSMsgType, WSServerHandshakeError, web
 
 log = logging.getLogger("wakeproxy")
 
@@ -52,6 +56,31 @@ def model_of(request, body):
     return None
 
 
+def is_websocket(request):
+    return request.headers.get("Upgrade", "").lower() == "websocket"
+
+
+async def relay(src, dst):
+    async for msg in src:              # ends when src closes
+        if msg.type == WSMsgType.TEXT:
+            await dst.send_str(msg.data)
+        elif msg.type == WSMsgType.BINARY:
+            await dst.send_bytes(msg.data)
+
+
+async def pipe(a, b):
+    """Copy messages between two websockets until either side closes, then close both."""
+    tasks = [asyncio.create_task(relay(a, b)), asyncio.create_task(relay(b, a))]
+    try:
+        await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        for t in tasks:
+            t.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        await a.close()
+        await b.close()
+
+
 def is_work(route, method, path):
     return method in route.work_methods and (
         route.work_paths is None or any(path.startswith(p) for p in route.work_paths))
@@ -60,18 +89,75 @@ def is_work(route, method, path):
 def make_app(ctl):
     cfg = ctl.cfg
 
+    def offline(route, request, path):
+        """The route's answer while the machine is off."""
+        cached = ctl.cached_health(route) if route.cache_health else None
+        if cached and request.method == "GET" and path == route.health:
+            return web.Response(text=cached["body"], content_type=cached["content_type"])
+        if route.offline_body is None:
+            return web.json_response({"status": "offline", "machine": cfg.name},
+                                     status=route.offline_status)
+        if isinstance(route.offline_body, str):
+            return web.Response(text=route.offline_body, status=route.offline_status)
+        return web.json_response(route.offline_body, status=route.offline_status)
+
+    async def start_record(request, route, method, path):
+        rec = {"start": ctl.clock(), "client": await client_name(request.remote), "route": route.name,
+               "method": method, "path": path, "model": None, "status": None,
+               "error": None, "woke": 0}
+        rec["id"] = ctl.history.start_request(rec)
+        return rec
+
+    async def websocket(request, route, path):
+        rec = await start_record(request, route, "WS", path) if route.work_websockets else None
+        try:
+            if rec:
+                ctl.hold(route.name, rec["id"], f"{rec['client']} → {path} (websocket)")
+                if not await ctl.wake(rec, ready=route.name):
+                    rec["status"], rec["error"] = 503, f"{cfg.name} failed to wake"
+                    return web.json_response({"error": {"message": f"{cfg.name} failed to wake"}}, status=503)
+            elif not await ctl.route_alive(route):
+                return offline(route, request, path)
+            # aiohttp makes its own handshake headers
+            headers = {k: v for k, v in request.headers.items()
+                       if k.lower() not in HOP_HEADERS and not k.lower().startswith("sec-websocket-")}
+            protocols = [p.strip() for p in request.headers.get("Sec-WebSocket-Protocol", "").split(",")
+                         if p.strip()]
+            query = f"?{request.query_string}" if request.query_string else ""
+            url = "ws" + route.upstream[len("http"):] + path + query     # http -> ws, https -> wss
+            async with ClientSession() as s:
+                try:
+                    up = await s.ws_connect(url, headers=headers, protocols=protocols, max_msg_size=0)
+                except WSServerHandshakeError as e:
+                    if rec:
+                        rec["status"] = e.status
+                    return web.Response(status=e.status if e.status >= 400 else 502, text=e.message or "")
+                async with up:
+                    down = web.WebSocketResponse(protocols=[up.protocol] if up.protocol else (),
+                                                 max_msg_size=0)
+                    await down.prepare(request)
+                    if rec:
+                        rec["status"] = 101
+                    await pipe(down, up)
+                    return down
+        except Exception as e:
+            if rec and not rec["error"]:
+                rec["error"] = f"{type(e).__name__}: {e}"[:300]
+            raise
+        finally:
+            if rec:
+                ctl.release(route.name, rec["id"])
+                ctl.history.finish_request(rec)
+
     async def handle(request):
         route = ctl.route_for(request.path)
         if route is None:
             return web.json_response({"error": "no route for this path"}, status=404)
         path = request.path[len(route.prefix):] or "/"
+        if is_websocket(request):
+            return await websocket(request, route, path)
         work = is_work(route, request.method, path)
-        rec = None
-        if work:
-            rec = {"start": ctl.clock(), "client": await client_name(request.remote), "route": route.name,
-                   "method": request.method, "path": path, "model": None, "status": None,
-                   "error": None, "woke": 0}
-            rec["id"] = ctl.history.start_request(rec)
+        rec = await start_record(request, route, request.method, path) if work else None
         try:
             if work:
                 ctl.hold(route.name, rec["id"], f"{rec['client']} → {path}")
@@ -91,15 +177,7 @@ def make_app(ctl):
             else:
                 # never wake for probes
                 if not await ctl.route_alive(route):
-                    cached = ctl.cached_health(route) if route.cache_health else None
-                    if cached and request.method == "GET" and path == route.health:
-                        return web.Response(text=cached["body"], content_type=cached["content_type"])
-                    if route.offline_body is None:
-                        return web.json_response({"status": "offline", "machine": cfg.name},
-                                                 status=route.offline_status)
-                    if isinstance(route.offline_body, str):
-                        return web.Response(text=route.offline_body, status=route.offline_status)
-                    return web.json_response(route.offline_body, status=route.offline_status)
+                    return offline(route, request, path)
                 try:
                     body = await request.read()
                 except ConnectionResetError:

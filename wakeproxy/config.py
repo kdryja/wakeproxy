@@ -52,6 +52,7 @@ class Route:
     timeout: float = 600              # seconds a forwarded request may take
     work_methods: list = field(default_factory=lambda: ["POST"])
     work_paths: list = None           # path prefixes that do work; None = every path
+    work_websockets: bool = False     # an open websocket wakes the machine and holds it until closed
     offline_status: int = 503         # answer to other requests while the machine is off
     offline_body: object = None
     cache_health: bool = False        # while off, answer GET <health> with its last response
@@ -143,6 +144,7 @@ def _route(data, where):
         timeout=s.get("timeout", float, 600.0, lambda v: v > 0),
         work_methods=[m.upper() for m in work.get("methods", list, ["POST"])],
         work_paths=paths,
+        work_websockets=work.get("websockets", bool, False),
         offline_status=off.get("status", int, 503),
         offline_body=off.get("body", (dict, list, str), None),
         cache_health=off.get("cache_health", bool, False),

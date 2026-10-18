@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.0
+
+- Websockets are passed through the proxy (before, the upgrade was dropped). A route's new
+  `work.websockets` setting makes opening one wake the machine and hold it until the connection
+  closes.
+- New source `comfyui`: running and waiting ComfyUI jobs keep the machine on, and
+  `free_after_minutes` unloads ComfyUI's models after the queue has been empty that long.
+
 ## 1.0.0
 
 First release.

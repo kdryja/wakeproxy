@@ -51,6 +51,8 @@ routes:
     work:                       # which requests do work
       methods: [POST]           # default [POST]
       paths: [/api/generate, /api/chat, /api/embed, /v1/chat/completions]   # prefixes; omit for every path
+      websockets: false         # true: opening a websocket wakes the machine and holds it until it
+                                # closes (default false: websockets are passed through, never wake)
     while_off:                  # the answer to other requests while the machine is off
       cache_health: true        # GET <health> gets the last answer it gave (e.g. a model list)
       status: 200               # default 503
@@ -60,16 +62,26 @@ routes:
     upstream: http://mypc.lan:9000
     health: /docs
     timeout: 7200
+  - name: comfyui               # for clients that open a websocket per job, e.g. Open WebUI with
+    prefix: /comfyui            # http://wakeproxy:8009/comfyui as its ComfyUI URL
+    upstream: http://mypc.lan:8188
+    health: /system_stats
+    work:
+      paths: [/prompt, /api/prompt, /upload, /api/upload]
+      websockets: true
 
 # Wake sources: things that need the machine without sending requests through the proxy. Each
-# can wake it and keep it on. Built in: tdarr, windows_session. `name` (optional) is the name
-# shown on the status page.
+# can wake it and keep it on. Built in: tdarr, comfyui, windows_session. `name` (optional) is the
+# name shown on the status page.
 sources:
   - type: tdarr                 # Tdarr's queue; its worker node runs on the machine
     url: http://tdarr:8265
     node: MyPC                  # the node's name in Tdarr
     # stuck_minutes: 15         # give up if the node takes none of the queued work
     # settle_minutes: 0         # wait before waking
+  - type: comfyui               # running and waiting jobs keep the machine on (never wakes it)
+    url: http://mypc.lan:8188
+    # free_after_minutes: 0     # unload ComfyUI's models this long after the queue empties
   - type: windows_session       # don't shut down under someone signed in with the screen unlocked
     target: user@mypc.lan
     key: /secrets/id_ed25519
