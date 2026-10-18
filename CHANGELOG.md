@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.2.0
+
+- A source can name a `route` in its config: the status page then shows it on that route's line
+  ("comfyui · requests · … · 1 running") instead of as a second entry for the same service.
+
 ## 1.1.1
 
 - `comfyui` source: shown as "ComfyUI queue", so it isn't mistaken for a second copy of a route

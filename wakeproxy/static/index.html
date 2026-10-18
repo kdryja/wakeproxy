@@ -353,11 +353,22 @@ function renderStatus() {
     : `<div class="empty">Nothing.</div>`;
 
   // Everything that can need the machine, in one list: routes (requests through the proxy)
-  // and sources (plugins), each with what it reports about itself.
+  // and sources (plugins), each with what it reports about itself. A source with a `route` is
+  // shown on that route's line instead of its own.
   const entries = [
-    ...s.services.map((x) => ({name: x.name, summary: "requests · " + x.upstream.replace(/^https?:\/\//, ""),
-      right: x.up ? "up" : pc.up ? "not answering" : "off", state: x.up ? "on" : x.up === false && pc.up ? "bad" : ""})),
-    ...s.sources.map((x) => ({name: x.name, summary: x.summary, state: x.state || "", rows: x.rows, note: x.note})),
+    ...s.services.map((x) => {
+      const e = {name: x.name, summary: "requests · " + x.upstream.replace(/^https?:\/\//, ""),
+        right: x.up ? "up" : pc.up ? "not answering" : "off", state: x.up ? "on" : x.up === false && pc.up ? "bad" : ""};
+      for (const src of pc.up ? s.sources.filter((y) => y.route === x.name) : []) {   // off: nothing to add
+        e.summary += " · " + src.summary;
+        if (src.state === "bad" || (src.state === "on" && e.state !== "bad")) e.state = src.state;
+        e.rows = [...(e.rows || []), ...(src.rows || [])];
+        e.note = [e.note, src.note].filter(Boolean).join(" ");
+      }
+      return e;
+    }),
+    ...s.sources.filter((x) => !x.route)
+      .map((x) => ({name: x.name, summary: x.summary, state: x.state || "", rows: x.rows, note: x.note})),
   ];
   $("sources").innerHTML = entries.map((e) => `
     <div class="row"><span class="dot ${e.state}"></span>

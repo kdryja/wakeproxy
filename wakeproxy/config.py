@@ -41,6 +41,7 @@ class PluginConf:
     options: dict
     where: str              # place in the config file, for error messages
     name: str = None        # sources: shown on the status page (defaults to the plugin's name)
+    route: str = None       # sources: shown on this route's line of the status page
 
 
 @dataclass
@@ -126,9 +127,12 @@ def _plugin(data, where, named=False):
     options = dict(data)
     type_name = options.pop("type")
     name = options.pop("name", None) if named else None
+    route = options.pop("route", None) if named else None
     if not isinstance(type_name, str):
         raise ConfigError(f"{where}.type: expected a string")
-    return PluginConf(type_name, options, where, name)
+    if route is not None and not isinstance(route, str):
+        raise ConfigError(f"{where}.route: expected a string")
+    return PluginConf(type_name, options, where, name, route)
 
 
 def _route(data, where):

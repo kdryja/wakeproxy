@@ -90,7 +90,13 @@ class Controller:
         self.power_on = self._make(registry, "power_on", self.cfg.power_on)
         self.power_off = self._make(registry, "power_off", self.cfg.power_off)
         self.checks = [self._make(registry, "check", c) for c in self.cfg.checks]
-        self.sources = [self._make(registry, "source", c) for c in self.cfg.sources]
+        self.sources = []
+        for c in self.cfg.sources:
+            if c.route is not None and c.route not in self.route_by_name:
+                raise ConfigError(f"{c.where}.route: no route named '{c.route}'")
+            src = self._make(registry, "source", c)
+            src.route = c.route
+            self.sources.append(src)
         names = [s.name for s in self.sources]
         if len(set(names)) != len(names):
             raise ConfigError("config.sources: two sources have the same name; give one a 'name'")
@@ -400,7 +406,8 @@ class Controller:
             "services": [{"name": r.name, "upstream": r.upstream,
                           **self.services.get(r.name, {"up": None, "checked": None})}
                          for r in self.cfg.routes],
-            "sources": [{"name": s.name, "type": s.type, "wakes": s.wakes, **s.status()} for s in self.sources],
+            "sources": [{"name": s.name, "type": s.type, "wakes": s.wakes, "route": s.route, **s.status()}
+                        for s in self.sources],
             "config": {"idle_seconds": self.cfg.idle_seconds, "wake_timeout": self.cfg.wake_timeout,
                        "history_days": self.cfg.request_days,
                        "wake_sources": [s.name for s in self.sources if getattr(s, "wakes", True)]},

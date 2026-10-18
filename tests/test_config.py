@@ -120,6 +120,15 @@ def test_route_websockets():
         build(minimal(routes=[{"name": "c", "upstream": "http://pc:3", "work": {"websockets": "yes"}}]))
 
 
+def test_source_on_a_route():
+    routes = [{"name": "comfyui", "prefix": "/c", "upstream": "http://pc:3"}]
+    ctl = build(minimal(routes=routes, sources=[{"type": "comfyui", "url": "http://pc:3", "route": "comfyui"}]))
+    assert ctl.sources[0].route == "comfyui"
+    assert ctl.status()["sources"][0]["route"] == "comfyui"
+    with pytest.raises(config.ConfigError, match=r"sources\[0\]\.route: no route named 'other'"):
+        build(minimal(routes=routes, sources=[{"type": "comfyui", "url": "http://pc:3", "route": "other"}]))
+
+
 def test_route_without_default_gives_none():
     ctl = build(minimal(routes=[{"name": "asr", "prefix": "/asr", "upstream": "http://pc:2"}]))
     assert ctl.route_for("/other") is None

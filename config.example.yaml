@@ -81,6 +81,7 @@ sources:
     # settle_minutes: 0         # wait before waking
   - type: comfyui               # running and waiting jobs keep the machine on (never wakes it)
     url: http://mypc.lan:8188
+    route: comfyui              # optional, any source: shown on that route's line of the status page
     # free_after_minutes: 0     # unload ComfyUI's models this long after the queue empties
     # patience_minutes: 5       # not answering counts as a problem after this (it starts slowly)
   - type: windows_session       # don't shut down under someone signed in with the screen unlocked

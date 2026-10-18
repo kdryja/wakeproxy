@@ -76,6 +76,7 @@ class Source(Plugin):
     interval = 60           # seconds between poll() calls
     wakes = True            # can wake the machine (listed on the status page as a wake source)
     force_shutdown = False  # set True when shutting down needs `force` (someone is signed in)
+    route = None            # set from the config entry's `route`: shown on that route's line
 
     @property
     def name(self):

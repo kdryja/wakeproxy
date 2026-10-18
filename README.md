@@ -95,7 +95,9 @@ wakeproxy at startup with the place in the file, e.g.
     clients that keep one open all the time, or the machine never shuts down;
   - `while_off`: the answer to other requests while the machine is off. `cache_health` answers
     `GET <health>` with its last response.
-- `sources`: wake sources. `name` (optional) is shown on the status page.
+- `sources`: wake sources. `name` (optional) is shown on the status page; `route` (optional)
+  shows the source on that route's line instead of its own, for a source that watches the same
+  service (e.g. `comfyui` on a route to ComfyUI).
 - `proxy`, `status_page`, `history`, `plugin_paths`, `log_level`.
 
 ## Built-in plugins
