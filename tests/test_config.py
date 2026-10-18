@@ -31,7 +31,7 @@ def test_example_config_loads_and_builds(monkeypatch):
     ctl = build(data)
     assert ctl.cfg.name == "MyPC"
     assert [r.name for r in ctl.cfg.routes] == ["ollama", "whisper", "comfyui"]
-    assert [s.name for s in ctl.sources] == ["Tdarr", "ComfyUI", "Windows session"]
+    assert [s.name for s in ctl.sources] == ["Tdarr", "ComfyUI queue", "Windows session"]
     assert ctl.cfg.idle_seconds == 600
 
 

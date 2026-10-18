@@ -115,7 +115,7 @@ wakeproxy at startup with the place in the file, e.g.
 | up_check | `ssh` | A command over SSH succeeds | `target`, `key`, `command` |
 | up_check | `command` | A shell command exits with 0 | `command` |
 | source | `tdarr` | Tdarr's queue wakes the machine; running jobs (and queued work, for up to `stuck_minutes`) keep it on. Pausing the node in Tdarr stops the wakes | `url`, `node`, `stuck_minutes`, `settle_minutes` |
-| source | `comfyui` | Running and waiting jobs in ComfyUI's queue keep the machine on; never wakes it (the queue is on the machine). `free_after_minutes` unloads ComfyUI's models once the queue has been empty that long | `url`, `free_after_minutes` |
+| source | `comfyui` | Running and waiting jobs in ComfyUI's queue keep the machine on; never wakes it (the queue is on the machine). `free_after_minutes` unloads ComfyUI's models once the queue has been empty that long | `url`, `free_after_minutes`, `patience_minutes` |
 | source | `windows_session` | A signed-in, unlocked Windows session holds off the shutdown (for `max_hours`); a signed-in, locked one makes it forced | `target`, `key`, `known_hosts`, `max_hours`, `session_command`, `lock_command` |
 
 The `force` variants of shutdown are used when a source reports that someone is signed in, so

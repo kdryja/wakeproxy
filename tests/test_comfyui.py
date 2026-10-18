@@ -50,7 +50,7 @@ def test_jobs_hold_the_machine_and_never_wake_it():
         fake.running, fake.pending = 1, 2
         await src.poll()
         [h] = ctl.active_holds()
-        assert h["source"] == "ComfyUI" and h["label"] == "1 running, 2 waiting"
+        assert h["source"] == "ComfyUI queue" and h["label"] == "1 running, 2 waiting"
         assert src.status()["state"] == "on"
         fake.running = fake.pending = 0
         await src.poll()
@@ -72,7 +72,13 @@ def test_unreachable_comfyui_releases_and_shows_the_error():
         fake.up = False
         await src.poll()
         assert ctl.active_holds() == []
+        assert src.status() == {"summary": "waiting for ComfyUI to answer"}    # e.g. still starting
+        clock.advance(300)
+        await src.poll()
         assert src.status()["state"] == "bad" and "502" in src.status()["note"]
+        fake.up = True
+        await src.poll()
+        assert src.status()["summary"] == "1 running" and ctl.active_holds()
         await teardown(server, ctl)
     asyncio.run(go())
 
@@ -114,5 +120,19 @@ def test_models_stay_loaded_by_default():
         clock.advance(86400)
         await src.poll()
         assert fake.freed == [] and src.status()["note"] is None
+        await teardown(server, ctl)
+    asyncio.run(go())
+
+
+def test_nothing_is_checked_while_shutting_down():
+    async def go():
+        fake = FakeComfyUI()
+        server, ctl, clock, src = await setup(fake)
+        fake.running = 1
+        await src.poll()
+        ctl.state["shutting_down"] = clock()
+        fake.up = False
+        await src.poll()
+        assert ctl.active_holds() == [] and src.status() == {"summary": "machine off"}
         await teardown(server, ctl)
     asyncio.run(go())

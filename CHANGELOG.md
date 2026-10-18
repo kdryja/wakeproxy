@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.1
+
+- `comfyui` source: shown as "ComfyUI queue", so it isn't mistaken for a second copy of a route
+  named comfyui. No error while the machine shuts down, and ComfyUI not answering only counts as
+  a problem after `patience_minutes` (default 5), since it starts a while after the machine.
+
 ## 1.1.0
 
 - Websockets are passed through the proxy (before, the upgrade was dropped). A route's new
