@@ -110,7 +110,8 @@ wakeproxy at startup with the place in the file, e.g.
     page (tab visible, mouse or keyboard input in the last 2 minutes), which holds the machine
     for `presence_minutes` (default 3), so a forgotten tab doesn't keep it on. `position`:
     `bottom-right` (default), `bottom-left`, `bottom-center`, `top-right`, `top-left`,
-    `top-center`. The badge lives in a shadow DOM and is loaded from the app's own address,
+    `top-center`. Anyone can drag the badge elsewhere if it covers something; their browser
+    remembers the spot per app, and **Reset position** in its menu puts it back. The badge lives in a shadow DOM and is loaded from the app's own address,
     so the app's styles and content security policy are unaffected.
 - `sources`: wake sources. `name` (optional) is shown on the status page; `route` (optional)
   shows the source on that route's line instead of its own, for a source that watches the same

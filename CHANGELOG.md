@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.5.1
+
+- The widget can be dragged elsewhere when it covers part of the app. The browser remembers the
+  spot for each app (and keeps it on the same side when the window is resized); **Reset
+  position** in its menu puts it back where `position` says. A click without dragging still
+  opens the menu, which now opens toward the middle of the window wherever the badge is.
+
 ## 1.5.0
 
 - `browser.widget`: a small badge on a hostname route's pages with the shutdown countdown,
