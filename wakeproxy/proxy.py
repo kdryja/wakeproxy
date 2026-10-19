@@ -16,7 +16,7 @@ import json
 import logging
 import socket
 
-from aiohttp import ClientSession, ClientTimeout, WSMsgType, WSServerHandshakeError, web
+from aiohttp import ClientSession, ClientTimeout, DummyCookieJar, WSMsgType, WSServerHandshakeError, web
 
 log = logging.getLogger("wakeproxy")
 
@@ -24,8 +24,13 @@ log = logging.getLogger("wakeproxy")
 # with a complete body is rejected by some servers, uvicorn among them).
 HOP_HEADERS = {"host", "content-length", "transfer-encoding", "connection", "keep-alive", "expect",
                "te", "upgrade"}
+# Answers are streamed back as they arrive (token streams, large files), with the upstream's own
+# headers. The body is passed on undecoded, so Content-Encoding and Content-Length stay valid.
+RESPONSE_HOP_HEADERS = {"transfer-encoding", "connection", "keep-alive", "te", "upgrade",
+                        "proxy-connection"}
 
 _client_names = {}
+UPSTREAM = web.AppKey("upstream", ClientSession)
 
 
 async def client_name(ip):
@@ -125,7 +130,7 @@ def make_app(ctl):
                          if p.strip()]
             query = f"?{request.query_string}" if request.query_string else ""
             url = "ws" + route.upstream[len("http"):] + path + query     # http -> ws, https -> wss
-            async with ClientSession() as s:
+            async with ClientSession(cookie_jar=DummyCookieJar()) as s:
                 try:
                     up = await s.ws_connect(url, headers=headers, protocols=protocols, max_msg_size=0)
                 except WSServerHandshakeError as e:
@@ -184,14 +189,24 @@ def make_app(ctl):
                     return web.Response(status=400)
             headers = {k: v for k, v in request.headers.items() if k.lower() not in HOP_HEADERS}
             query = f"?{request.query_string}" if request.query_string else ""
-            async with ClientSession() as s:
-                async with s.request(request.method, f"{route.upstream}{path}{query}", data=body,
-                                     headers=headers, timeout=ClientTimeout(total=route.timeout)) as r:
-                    data = await r.read()
+            async with request.app[UPSTREAM].request(
+                    request.method, f"{route.upstream}{path}{query}", data=body, headers=headers,
+                    allow_redirects=False, timeout=ClientTimeout(total=route.timeout)) as r:
+                if rec:
+                    rec["status"] = r.status
+                resp = web.StreamResponse(status=r.status, reason=r.reason)
+                for k, v in r.headers.items():                # items(): repeated headers (Set-Cookie) too
+                    if k.lower() not in RESPONSE_HOP_HEADERS:
+                        resp.headers.add(k, v)
+                await resp.prepare(request)
+                try:
+                    async for chunk in r.content.iter_any():
+                        await resp.write(chunk)
+                    await resp.write_eof()
+                except ConnectionResetError:
                     if rec:
-                        rec["status"] = r.status
-                    return web.Response(status=r.status, body=data,
-                                        content_type=r.content_type, charset=r.charset)
+                        rec["error"] = "client disconnected"
+                return resp
         except Exception as e:
             if rec and not rec["error"]:
                 rec["error"] = f"{type(e).__name__}: {e}"[:300]
@@ -242,7 +257,17 @@ def make_app(ctl):
             return web.json_response({"error": "missing or wrong bearer token"}, status=401)
         return web.json_response(ctl.status())
 
+    async def open_upstream(app):
+        # One session for all forwarding. No cookie jar: cookies belong to each client, and
+        # no decompression: bodies are passed on as the service sent them.
+        app[UPSTREAM] = ClientSession(cookie_jar=DummyCookieJar(), auto_decompress=False)
+
+    async def close_upstream(app):
+        await app[UPSTREAM].close()
+
     app = web.Application(client_max_size=cfg.max_upload_mb * 1024 * 1024)
+    app.on_startup.append(open_upstream)
+    app.on_cleanup.append(close_upstream)
     app.router.add_route("POST", "/_wakeproxy/hold/{name}", api_hold)
     app.router.add_route("DELETE", "/_wakeproxy/hold/{name}", api_hold)
     app.router.add_get("/_wakeproxy/status", api_status)

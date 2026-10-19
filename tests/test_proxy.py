@@ -1,5 +1,6 @@
 """The proxy and the hold API, against a fake upstream service."""
 import asyncio
+import gzip
 
 import pytest
 from aiohttp import ClientSession, WSMsgType, WSServerHandshakeError, web
@@ -12,6 +13,7 @@ from wakeproxy import proxy
 class Upstream:
     def __init__(self, machine):
         self.machine, self.seen = machine, []
+        self.client_has_first_chunk = asyncio.Event()
 
     def app(self):
         async def any_path(request):
@@ -37,7 +39,37 @@ class Upstream:
                     await sock.send_bytes(msg.data[::-1])
             return sock
 
+        async def stream(request):
+            # The second chunk is only sent once the client has the first: a proxy that waits for
+            # the whole body would never deliver it, and the wait below would time out.
+            resp = web.StreamResponse(headers={"Content-Type": "text/event-stream"})
+            await resp.prepare(request)
+            await resp.write(b"data: one\n\n")
+            try:
+                await asyncio.wait_for(self.client_has_first_chunk.wait(), 2)
+                await resp.write(b"data: two\n\n")
+            except asyncio.TimeoutError:
+                await resp.write(b"data: buffered\n\n")
+            return resp
+
+        async def redirect(request):
+            return web.Response(status=302, headers={"Location": "/elsewhere"})
+
+        async def cookies(request):
+            resp = web.Response(text="ok")
+            resp.set_cookie("a", "1")
+            resp.set_cookie("b", "2")
+            return resp
+
+        async def gzipped(request):
+            return web.Response(body=gzip.compress(b"hello " * 100),
+                                headers={"Content-Encoding": "gzip", "Content-Type": "text/plain"})
+
         app = web.Application()
+        app.router.add_get("/stream", stream)
+        app.router.add_get("/redirect", redirect)
+        app.router.add_get("/cookies", cookies)
+        app.router.add_get("/gzip", gzipped)
         app.router.add_get("/ws", ws)
         app.router.add_route("*", "/{tail:.*}", any_path)
         return app
@@ -211,5 +243,32 @@ def test_other_websockets_never_wake_or_hold():
         with pytest.raises(WSServerHandshakeError) as e:
             await client.ws_connect("/asr/not-a-websocket")       # upstream answers without upgrading
         assert e.value.status == 502
+        await teardown(ctl, upstream, client)
+    asyncio.run(go())
+
+
+def test_responses_are_streamed():
+    async def go():
+        ctl, clock, m, up, upstream, client = await setup()
+        m.on = True
+        r = await client.get("/asr/stream")
+        assert r.headers["Content-Type"] == "text/event-stream"
+        assert await r.content.readuntil(b"\n\n") == b"data: one\n\n"
+        up.client_has_first_chunk.set()
+        assert await r.content.read() == b"data: two\n\n"
+        await teardown(ctl, upstream, client)
+    asyncio.run(go())
+
+
+def test_redirects_cookies_and_compression_pass_through():
+    async def go():
+        ctl, clock, m, up, upstream, client = await setup()
+        m.on = True
+        r = await client.get("/asr/redirect", allow_redirects=False)
+        assert r.status == 302 and r.headers["Location"] == "/elsewhere"      # not followed
+        r = await client.get("/asr/cookies")
+        assert sorted(c.split("=")[0] for c in r.headers.getall("Set-Cookie")) == ["a", "b"]
+        r = await client.get("/asr/gzip")
+        assert r.headers["Content-Encoding"] == "gzip" and await r.text() == "hello " * 100
         await teardown(ctl, upstream, client)
     asyncio.run(go())

@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.3.0
+
+- Answers are streamed back as they arrive instead of after the whole body: token streams
+  (`"stream": true` chat completions) reach the client word by word, and large downloads start
+  at once. Before, a streamed chat answer arrived all at the end.
+- The upstream's headers are passed on (redirects with `Location`, every `Set-Cookie`,
+  caching headers), redirects are no longer followed by wakeproxy, and compressed bodies are
+  passed on as they are. Before, only the content type survived.
+
 ## 1.2.0
 
 - A source can name a `route` in its config: the status page then shows it on that route's line

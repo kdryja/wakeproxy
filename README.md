@@ -86,7 +86,7 @@ wakeproxy at startup with the place in the file, e.g.
   - `shutdown`: how to turn it off;
   - `up_check`: a list of checks; the machine is up when any of them answers.
 - `routes`: the services on the machine, picked by path prefix (the prefix is stripped before
-  forwarding). Each route has:
+  forwarding). Answers are streamed back as they arrive, with the service's own headers. Each route has:
   - `upstream` and `health` (the URL to check);
   - `timeout`;
   - `work`: which methods and path prefixes do work, i.e. wake and hold. Websockets are passed
