@@ -28,6 +28,7 @@ from importlib import resources
 from urllib.parse import urlencode
 
 from aiohttp import ClientSession, ClientTimeout, DummyCookieJar, WSMsgType, WSServerHandshakeError, web
+from yarl import URL
 
 log = logging.getLogger("wakeproxy")
 
@@ -237,6 +238,20 @@ def make_app(ctl):
         return web.Response(text=STATIC.joinpath("logo.svg").read_text(), content_type="image/svg+xml",
                             headers={"Cache-Control": "max-age=86400"})
 
+    def target(request, route, by_host):
+        """The path and query to send to the service, percent-encoded as the client sent them.
+        Decoded, an encoded character could change the request: ComfyUI's
+        /api/userdata/workflows%2Fname.json would become another path, and a%26b in a query
+        two parameters."""
+        raw = request.rel_url.raw_path
+        if not by_host and route.prefix:
+            # the prefix matched the decoded path; a client that encoded part of it gets that path
+            # re-encoded instead
+            raw = raw[len(route.prefix):] or "/" if raw.startswith(route.prefix) else \
+                URL.build(path=request.path[len(route.prefix):] or "/").raw_path
+        query = request.rel_url.raw_query_string
+        return raw + (f"?{query}" if query else "")
+
     async def websocket(request, route, path, by_host):
         work = route.work_websockets and not by_host
         rec = await start_record(request, route, "WS", path) if work else None
@@ -253,8 +268,8 @@ def make_app(ctl):
                        if k.lower() not in HOP_HEADERS and not k.lower().startswith("sec-websocket-")}
             protocols = [p.strip() for p in request.headers.get("Sec-WebSocket-Protocol", "").split(",")
                          if p.strip()]
-            query = f"?{request.query_string}" if request.query_string else ""
-            url = "ws" + route.upstream[len("http"):] + path + query     # http -> ws, https -> wss
+            url = URL("ws" + route.upstream[len("http"):] + target(request, route, by_host),   # http -> ws
+                      encoded=True)
             async with ClientSession(cookie_jar=DummyCookieJar()) as s:
                 try:
                     up = await s.ws_connect(url, headers=headers, protocols=protocols, max_msg_size=0)
@@ -321,9 +336,9 @@ def make_app(ctl):
             if inject or not any(k.lower() == "accept-encoding" for k in headers):
                 headers = {k: v for k, v in headers.items() if k.lower() != "accept-encoding"}
                 headers["Accept-Encoding"] = "identity"
-            query = f"?{request.query_string}" if request.query_string else ""
             async with request.app[UPSTREAM].request(
-                    request.method, f"{route.upstream}{path}{query}", data=body, headers=headers,
+                    request.method, URL(route.upstream + target(request, route, by_host), encoded=True),
+                    data=body, headers=headers,
                     allow_redirects=False, timeout=ClientTimeout(total=route.timeout)) as r:
                 if rec:
                     rec["status"] = r.status

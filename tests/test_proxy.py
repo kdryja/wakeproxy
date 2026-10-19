@@ -72,7 +72,11 @@ class Upstream:
                                                                        "Content-Type": "text/html"})
             return web.Response(body=body, content_type="text/html")
 
+        async def raw(request):
+            return web.json_response({"raw_path": request.raw_path, "query": dict(request.query)})
+
         app = web.Application()
+        app.router.add_get("/raw/{tail:.*}", raw)
         app.router.add_get("/page", page)
         app.router.add_get("/stream", stream)
         app.router.add_get("/redirect", redirect)
@@ -422,5 +426,25 @@ def test_widget_extend_and_presence():
         assert ctl.deadline() == ctl.state["override"] > clock() + ctl.cfg.idle_seconds
         r = await client.post("/_wakeproxy/page/presence?route=plain", headers=APP)
         assert r.status == 404
+        await teardown(ctl, upstream, client)
+    asyncio.run(go())
+
+
+def test_encoded_paths_and_queries_reach_the_service_unchanged():
+    # ComfyUI loads a saved workflow from /api/userdata/workflows%2F<name>: decoded, the %2F is
+    # another path segment and the service answers 404.
+    async def go():
+        ctl, clock, m, up, upstream, client = await setup()
+        m.on = True
+        for prefix, headers in (("", {}), ("/asr", {}), ("", {"Host": "plain.example"})):
+            r = await client.get(prefix + "/raw/workflows%2FMy%20flow%20%C2%B7%201.json?q=a%26b&x=%2B",
+                                 headers=headers)
+            assert r.status == 200, prefix
+            body = await r.json()
+            assert body["raw_path"] == "/raw/workflows%2FMy%20flow%20%C2%B7%201.json?q=a%26b&x=%2B"
+            assert body["query"] == {"q": "a&b", "x": "+"}
+        ws = await client.ws_connect("/comfy/ws?clientId=a%26b")
+        assert (await ws.receive_json()) == {"hello": "a&b"}
+        await ws.close()
         await teardown(ctl, upstream, client)
     asyncio.run(go())

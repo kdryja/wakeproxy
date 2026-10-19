@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.5.2
+
+- Fix: paths and query strings are passed on exactly as the client sent them. They were decoded
+  first, so an encoded character could change the request: ComfyUI couldn't open saved
+  workflows (it asks for `/api/userdata/workflows%2F<name>`, which became another path and a
+  404), and `%26` or `%2B` in a query value turned into a parameter separator or a plus sign.
+
 ## 1.5.1
 
 - The widget can be dragged elsewhere when it covers part of the app. The browser remembers the
