@@ -65,7 +65,15 @@ class Upstream:
             return web.Response(body=gzip.compress(b"hello " * 100),
                                 headers={"Content-Encoding": "gzip", "Content-Type": "text/plain"})
 
+        async def page(request):
+            body = b"<html><head><title>App</title></head><body>hi</body></html>"
+            if "gzip" in request.headers.get("Accept-Encoding", ""):
+                return web.Response(body=gzip.compress(body), headers={"Content-Encoding": "gzip",
+                                                                       "Content-Type": "text/html"})
+            return web.Response(body=body, content_type="text/html")
+
         app = web.Application()
+        app.router.add_get("/page", page)
         app.router.add_get("/stream", stream)
         app.router.add_get("/redirect", redirect)
         app.router.add_get("/cookies", cookies)
@@ -88,7 +96,8 @@ async def setup(**extra):
         config.Route(name="asr", prefix="/asr", upstream=base, health="/docs"),
         config.Route(name="comfy", prefix="/comfy", upstream=base, health="/docs", work_websockets=True),
         config.Route(name="app", prefix=None, hosts=["app.example"], upstream=base, health="/docs",
-                     wake_page=True, work_websockets=True),
+                     wake_page=True, work_websockets=True, widget=True),
+        config.Route(name="plain", prefix=None, hosts=["plain.example"], upstream=base, health="/docs"),
     ]
     ctl.route_by_name = {r.name: r for r in ctl.cfg.routes}
     ctl.route_by_host = {h: r for r in ctl.cfg.routes for h in r.hosts}
@@ -273,6 +282,8 @@ def test_redirects_cookies_and_compression_pass_through():
         assert sorted(c.split("=")[0] for c in r.headers.getall("Set-Cookie")) == ["a", "b"]
         r = await client.get("/asr/gzip")
         assert r.headers["Content-Encoding"] == "gzip" and await r.text() == "hello " * 100
+        r = await client.get("/asr/page", skip_auto_headers=["Accept-Encoding"])   # client accepts no gzip
+        assert "Content-Encoding" not in r.headers and await r.text() == "<html><head><title>App</title></head><body>hi</body></html>"
         await teardown(ctl, upstream, client)
     asyncio.run(go())
 
@@ -362,5 +373,54 @@ def test_fresh_background_check_saves_a_health_check_per_request():
         clock.advance(60)                                               # stale: checked again
         await client.get("/asset.js", headers=APP)
         assert [p for _, p, _ in up.seen][-2:] == ["/docs", "/asset.js"]
+        await teardown(ctl, upstream, client)
+    asyncio.run(go())
+
+
+def test_widget_is_added_to_pages_only():
+    async def go():
+        ctl, clock, m, up, upstream, client = await setup()
+        m.on = True
+        r = await client.get("/page", headers={**PAGE, "Accept-Encoding": "gzip"})
+        body = await r.text()
+        assert "Content-Encoding" not in r.headers                    # asked uncompressed, to add it
+        assert body.index('src="/_wakeproxy/page/widget.js?route=app&amp;position=bottom-right"') < body.index("</head>")
+        r = await client.get("/page", headers={**APP, "Accept": "application/json", "Accept-Encoding": "gzip"})
+        assert r.headers["Content-Encoding"] == "gzip" and "widget.js" not in await r.text()
+        r = await client.get("/page", headers={"Host": "plain.example", "Accept": "text/html"})
+        assert "widget.js" not in await r.text()                      # route without the widget
+        r = await client.get("/_wakeproxy/page/widget.js", headers=APP)
+        assert r.status == 200 and "javascript" in r.headers["Content-Type"] and "attachShadow" in await r.text()
+        await teardown(ctl, upstream, client)
+    asyncio.run(go())
+
+
+def test_widget_extend_and_presence():
+    async def go():
+        ctl, clock, m, up, upstream, client = await setup()
+        r = await client.post("/_wakeproxy/page/presence?route=app", headers=APP)
+        assert r.status == 200 and ctl.active_holds() == []           # machine off: nothing held
+        m.on = True
+        ctl.state["pc_up"] = True
+        r = await client.post("/_wakeproxy/page/extend?route=app&minutes=30", headers=APP)
+        assert r.status == 409                                        # not woken by wakeproxy: no timer
+        ctl.state["woken_by_me"] = True
+        ctl.touch()
+        before = ctl.deadline()
+        st = await (await client.post("/_wakeproxy/page/extend?route=app&minutes=30", headers=APP)).json()
+        assert ctl.deadline() == before + 1800 and st["deadline"] == ctl.deadline() and st["managed"]
+        r = await client.post("/_wakeproxy/page/extend?route=app&minutes=999", headers=APP)
+        assert r.status == 400
+        st = await (await client.post("/_wakeproxy/page/presence?route=app", headers=APP)).json()
+        [h] = ctl.active_holds()
+        assert (h["source"], h["key"]) == ("app", "presence") and 178 <= h["until"] - clock() <= 180
+        assert st["deadline"] is None and st["holds"][0]["key"] == "presence"
+        clock.advance(181)
+        ctl.expire_holds()
+        # presence ended: the idle timer starts over, and the +30 min given earlier still counts
+        assert ctl.active_holds() == [] and ctl.state["last_activity"] == clock()
+        assert ctl.deadline() == ctl.state["override"] > clock() + ctl.cfg.idle_seconds
+        r = await client.post("/_wakeproxy/page/presence?route=plain", headers=APP)
+        assert r.status == 404
         await teardown(ctl, upstream, client)
     asyncio.run(go())

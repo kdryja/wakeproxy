@@ -44,6 +44,9 @@ class PluginConf:
     route: str = None       # sources: shown on this route's line of the status page
 
 
+POSITIONS = ("bottom-right", "bottom-left", "bottom-center", "top-right", "top-left", "top-center")
+
+
 @dataclass
 class Route:
     name: str
@@ -59,6 +62,9 @@ class Route:
     offline_body: object = None
     cache_health: bool = False        # while off, answer GET <health> with its last response
     wake_page: bool = False           # while off, browsers asking for a page get a page with a Wake button
+    widget: bool = False              # add the timer widget to the app's pages (hostname routes)
+    presence_minutes: float = 3       # widget: someone active in the tab holds the machine this long
+    widget_position: str = "bottom-right"   # where the widget sits on the page
 
 
 @dataclass
@@ -77,6 +83,7 @@ class Config:
     ui_port: int = 8010
     trusted_proxies: list = field(default_factory=list)
     user_header: str = None
+    status_url: str = None            # the status page's public address, linked from the widget
     db_path: str = "/data/wakeproxy.db"
     request_days: int = 90
     event_days: int = 365
@@ -141,6 +148,7 @@ def _route(data, where):
     s = _Section(data, where)
     work = s.section("work")
     off = s.section("while_off")
+    browser = s.section("browser")
     paths = work.get("paths", list, None)
     hosts = [h.lower() for h in s.get("hosts", list, [])]
     if not all(isinstance(h, str) and h and "/" not in h for h in hosts):
@@ -162,11 +170,15 @@ def _route(data, where):
         offline_body=off.get("body", (dict, list, str), None),
         cache_health=off.get("cache_health", bool, False),
         wake_page=off.get("wake_page", bool, False),
+        widget=browser.get("widget", bool, False),
+        presence_minutes=browser.get("presence_minutes", (int, float), 3, lambda v: 0 <= v <= 60),
+        widget_position=browser.get("position", str, "bottom-right", lambda v: v in POSITIONS),
     )
     if route.prefix and not route.prefix.startswith("/"):
         raise ConfigError(f"{where}.prefix: must start with /")
     work.done()
     off.done()
+    browser.done()
     s.done()
     return route
 
@@ -207,6 +219,7 @@ def parse(data):
         ui_port=ui.get("port", int, 8010),
         trusted_proxies=ui.get("trusted_proxies", list, []),
         user_header=ui.get("user_header", str, None),
+        status_url=ui.get("public_url", str, None),
         db_path=history.get("path", str, "/data/wakeproxy.db"),
         request_days=history.get("request_days", int, 90),
         event_days=history.get("event_days", int, 365),

@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.5.0
+
+- `browser.widget`: a small badge on a hostname route's pages with the shutdown countdown,
+  +30 min / +1 h, a Wake button if the machine went off (the page reloads once it's back), and a
+  link to the status page (`status_page.public_url`). Shadow DOM, served from the app's own
+  address, so it works under strict content security policies.
+- Presence: while the tab is visible and someone used mouse or keyboard in the last 2 minutes,
+  the widget holds the machine for `presence_minutes` (default 3). A forgotten tab doesn't.
+- Fix (since 1.3.0): a client that sent no `Accept-Encoding` could get a compressed body, because
+  the forwarding client asked for gzip on its behalf. The service is now asked for `identity`.
+
 ## 1.4.0
 
 - Routes can answer whole hostnames (`hosts`), for web apps with absolute paths: point the

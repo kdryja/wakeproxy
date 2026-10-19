@@ -25,6 +25,7 @@ import logging
 import socket
 import statistics
 from importlib import resources
+from urllib.parse import urlencode
 
 from aiohttp import ClientSession, ClientTimeout, DummyCookieJar, WSMsgType, WSServerHandshakeError, web
 
@@ -102,6 +103,18 @@ def wants_page(request):
     return request.method == "GET" and "text/html" in request.headers.get("Accept", "")
 
 
+def add_widget(page, route):
+    """The widget's script tag, before </head> (or </body>, or at the end)."""
+    tag = ('<script src="/_wakeproxy/page/widget.js?%s" defer></script>' % html.escape(
+        urlencode({"route": route.name, "position": route.widget_position}))).encode()
+    low = page.lower()
+    for marker in (b"</head>", b"</body>"):
+        i = low.find(marker)
+        if i >= 0:
+            return page[:i] + tag + page[i:]
+    return page + tag
+
+
 def is_work(route, method, path):
     return method in route.work_methods and (
         route.work_paths is None or any(path.startswith(p) for p in route.work_paths))
@@ -146,17 +159,26 @@ def make_app(ctl):
 
     def page_route(request):
         route = ctl.route_by_name.get(request.query.get("route", ""))
-        return route if route and route.wake_page else None
+        return route if route and (route.wake_page or route.widget) else None
+
+    async def who(request):
+        return (cfg.user_header and request.headers.get(cfg.user_header)) or await client_name(request.remote)
 
     async def page_state(route):
         st = ctl.state
         waits = [e["seconds"] for e in ctl.history.events(ctl.clock() - 30 * 86400)
                  if e["kind"] == "wake_ok" and isinstance(e.get("seconds"), (int, float))]
         return {"machine": cfg.name, "route": route.name, "now": ctl.clock(),
-                "up": bool(st["pc_up"]), "service_up": bool(st["pc_up"]) and await ctl.route_alive(route),
+                "up": bool(st["pc_up"]), "service_up": bool(st["pc_up"]) and await alive(route),
                 "waking": st["waking"]["since"] if st["waking"] else None,
                 "shutting_down": st["shutting_down"] is not None,
-                "typical_wake": round(statistics.median(waits)) if waits else None}
+                "typical_wake": round(statistics.median(waits)) if waits else None,
+                # for the widget
+                "managed": bool(st["woken_by_me"]),
+                "deadline": ctl.deadline() if st["woken_by_me"] and not ctl.active_holds() else None,
+                "holds": [{"source": h["source"], "label": h["label"], "key": h["key"]}
+                          for h in ctl.active_holds()],
+                "status_url": cfg.status_url, "presence_minutes": route.presence_minutes}
 
     async def api_page_state(request):
         route = page_route(request)
@@ -172,10 +194,44 @@ def make_app(ctl):
             return web.json_response({"error": "no such route with a wake page"}, status=404)
         state = await page_state(route)
         if not state["service_up"] and not state["shutting_down"]:
-            who = (cfg.user_header and request.headers.get(cfg.user_header)) or await client_name(request.remote)
-            ctl.wake_soon({"client": who, "route": route.name, "path": "wake page"}, ready=route.name)
+            ctl.wake_soon({"client": await who(request), "route": route.name, "path": "wake page"},
+                          ready=route.name)
             state = await page_state(route)
         return web.json_response(state)
+
+    async def api_page_extend(request):
+        """The widget's +30 min / +1 h: moves the shutdown time later, like the status page."""
+        route = page_route(request)
+        if not route:
+            return web.json_response({"error": "no such route with a widget"}, status=404)
+        try:
+            minutes = float(request.query.get("minutes", "30"))
+        except ValueError:
+            minutes = -1
+        if not 1 <= minutes <= 240:
+            return web.json_response({"error": "minutes must be between 1 and 240"}, status=400)
+        st, now = ctl.state, ctl.clock()
+        if not st["pc_up"] or not st["woken_by_me"]:
+            return web.json_response({"error": f"{cfg.name} has no shutdown timer"}, status=409)
+        st["override"] = max(ctl.deadline(), now) + minutes * 60
+        ctl.save_state()
+        ctl.history.event("timer", action="extend", minutes=minutes, by=await who(request), deadline=ctl.deadline())
+        return web.json_response(await page_state(route))
+
+    async def api_page_presence(request):
+        """The widget reports that someone is using the app (tab visible, recent input): that
+        holds the machine for presence_minutes. A forgotten tab stops reporting."""
+        route = page_route(request)
+        if not route or not route.presence_minutes:
+            return web.json_response({"error": "no such route with presence"}, status=404)
+        if ctl.state["pc_up"]:
+            ctl.hold(route.name, "presence", "in use in a browser", detail=await who(request),
+                     until=ctl.clock() + route.presence_minutes * 60)
+        return web.json_response(await page_state(route))
+
+    async def page_widget(request):
+        return web.Response(text=STATIC.joinpath("widget.js").read_text(), content_type="text/javascript",
+                            headers={"Cache-Control": "no-cache"})
 
     async def page_logo(request):
         return web.Response(text=STATIC.joinpath("logo.svg").read_text(), content_type="image/svg+xml",
@@ -258,12 +314,26 @@ def make_app(ctl):
                 except ConnectionResetError:
                     return web.Response(status=400)
             headers = {k: v for k, v in request.headers.items() if k.lower() not in HOP_HEADERS}
+            inject = by_host and route.widget and wants_page(request)
+            # Bodies are passed on undecoded, so the service may only compress what the client
+            # accepts: without the client's own header aiohttp would ask for gzip itself. A page
+            # that gets the widget has to arrive uncompressed.
+            if inject or not any(k.lower() == "accept-encoding" for k in headers):
+                headers = {k: v for k, v in headers.items() if k.lower() != "accept-encoding"}
+                headers["Accept-Encoding"] = "identity"
             query = f"?{request.query_string}" if request.query_string else ""
             async with request.app[UPSTREAM].request(
                     request.method, f"{route.upstream}{path}{query}", data=body, headers=headers,
                     allow_redirects=False, timeout=ClientTimeout(total=route.timeout)) as r:
                 if rec:
                     rec["status"] = r.status
+                if (inject and r.status == 200 and r.content_type == "text/html"
+                        and r.headers.get("Content-Encoding", "identity") == "identity"):
+                    resp = web.Response(status=200, body=add_widget(await r.read(), route))
+                    for k, v in r.headers.items():
+                        if k.lower() not in RESPONSE_HOP_HEADERS | {"content-length", "content-encoding"}:
+                            resp.headers.add(k, v)
+                    return resp
                 resp = web.StreamResponse(status=r.status, reason=r.reason)
                 for k, v in r.headers.items():                # items(): repeated headers (Set-Cookie) too
                     if k.lower() not in RESPONSE_HOP_HEADERS:
@@ -343,6 +413,9 @@ def make_app(ctl):
     app.router.add_get("/_wakeproxy/status", api_status)
     app.router.add_get("/_wakeproxy/page/state", api_page_state)
     app.router.add_post("/_wakeproxy/page/wake", api_page_wake)
+    app.router.add_post("/_wakeproxy/page/extend", api_page_extend)
+    app.router.add_post("/_wakeproxy/page/presence", api_page_presence)
+    app.router.add_get("/_wakeproxy/page/widget.js", page_widget)
     app.router.add_get("/_wakeproxy/page/logo.svg", page_logo)
     app.router.add_route("*", "/{tail:.*}", handle)
     return app

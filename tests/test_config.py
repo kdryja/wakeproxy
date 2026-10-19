@@ -148,6 +148,17 @@ def test_routes_by_hostname():
         build(minimal(routes=[{"name": "a", "upstream": "http://pc:1", "hosts": ["http://x/"]}]))
 
 
+def test_browser_settings():
+    ctl = build(minimal(routes=[{"name": "a", "upstream": "http://pc:1", "hosts": ["a.example"],
+                                 "browser": {"widget": True, "position": "bottom-center", "presence_minutes": 5}}],
+                        status_page={"public_url": "https://wake.example"}))
+    r = ctl.cfg.routes[0]
+    assert r.widget and r.widget_position == "bottom-center" and r.presence_minutes == 5
+    assert ctl.cfg.status_url == "https://wake.example"
+    with pytest.raises(config.ConfigError, match=r"browser.position: invalid"):
+        build(minimal(routes=[{"name": "a", "upstream": "http://pc:1", "browser": {"position": "middle"}}]))
+
+
 def test_route_without_default_gives_none():
     ctl = build(minimal(routes=[{"name": "asr", "prefix": "/asr", "upstream": "http://pc:2"}]))
     assert ctl.route_for("/other") is None

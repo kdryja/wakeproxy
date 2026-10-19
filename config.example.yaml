@@ -72,6 +72,10 @@ routes:
       websockets: true          # not for comfyui.example.com: a browser tab keeps its websocket open
     while_off:
       wake_page: true           # browsers opening comfyui.example.com get a page with a Wake button
+    browser:
+      widget: true              # a badge on ComfyUI's page: shutdown countdown, +30 min, status page link
+      position: bottom-center   # bottom-right (default), bottom-left, bottom-center, top-right, ...
+      # presence_minutes: 3     # someone active in the tab holds the machine this long (0: off)
 
 # Wake sources: things that need the machine without sending requests through the proxy. Each
 # can wake it and keep it on. Built in: tdarr, comfyui, windows_session. `name` (optional) is the
@@ -110,6 +114,7 @@ status_page:
   # the port. 127.0.0.1 is always allowed.
   trusted_proxies: []
   # user_header: X-authentik-username   # who did what, in the history
+  # public_url: https://wakeproxy.example.com   # linked from the widget
 
 history:
   path: /data/wakeproxy.db

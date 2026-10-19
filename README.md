@@ -102,7 +102,16 @@ wakeproxy at startup with the place in the file, e.g.
     answers; scripts and API calls still get the offline answer. Anyone who can reach the
     hostname can press the button, so keep it behind your authenticating reverse proxy.
     Websockets opened through a hostname never count as work, since a browser tab keeps its own
-    open for as long as the tab exists.
+    open for as long as the tab exists. Careful when adding `hosts` to the default route: give it
+    `prefix: ""` explicitly, or it stops being the default.
+  - `browser` (with `hosts`): `widget: true` adds a small badge to the app's pages, showing when
+    the machine shuts down, with +30 min / +1 h, a Wake button if it went off, and a link to the
+    status page (`status_page.public_url`). It also tells wakeproxy when someone is using the
+    page (tab visible, mouse or keyboard input in the last 2 minutes), which holds the machine
+    for `presence_minutes` (default 3), so a forgotten tab doesn't keep it on. `position`:
+    `bottom-right` (default), `bottom-left`, `bottom-center`, `top-right`, `top-left`,
+    `top-center`. The badge lives in a shadow DOM and is loaded from the app's own address,
+    so the app's styles and content security policy are unaffected.
 - `sources`: wake sources. `name` (optional) is shown on the status page; `route` (optional)
   shows the source on that route's line instead of its own, for a source that watches the same
   service (e.g. `comfyui` on a route to ComfyUI).
