@@ -64,11 +64,14 @@ routes:
     timeout: 7200
   - name: comfyui               # for clients that open a websocket per job, e.g. Open WebUI with
     prefix: /comfyui            # http://wakeproxy:8009/comfyui as its ComfyUI URL
+    hosts: [comfyui.example.com]  # and ComfyUI's own page: the reverse proxy sends this hostname here
     upstream: http://mypc.lan:8188
     health: /system_stats
     work:
       paths: [/prompt, /api/prompt, /upload, /api/upload]
-      websockets: true
+      websockets: true          # not for comfyui.example.com: a browser tab keeps its websocket open
+    while_off:
+      wake_page: true           # browsers opening comfyui.example.com get a page with a Wake button
 
 # Wake sources: things that need the machine without sending requests through the proxy. Each
 # can wake it and keep it on. Built in: tdarr, comfyui, windows_session. `name` (optional) is the

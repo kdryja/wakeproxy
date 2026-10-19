@@ -48,7 +48,8 @@ class PluginConf:
 class Route:
     name: str
     upstream: str
-    prefix: str = ""                  # "" = everything no other route takes
+    prefix: str = ""                  # "" = everything no other route takes; None = hostnames only
+    hosts: list = field(default_factory=list)   # hostnames this route answers, whatever the path
     health: str = "/"                 # GET this to see whether the service is up
     timeout: float = 600              # seconds a forwarded request may take
     work_methods: list = field(default_factory=lambda: ["POST"])
@@ -57,6 +58,7 @@ class Route:
     offline_status: int = 503         # answer to other requests while the machine is off
     offline_body: object = None
     cache_health: bool = False        # while off, answer GET <health> with its last response
+    wake_page: bool = False           # while off, browsers asking for a page get a page with a Wake button
 
 
 @dataclass
@@ -140,10 +142,17 @@ def _route(data, where):
     work = s.section("work")
     off = s.section("while_off")
     paths = work.get("paths", list, None)
+    hosts = [h.lower() for h in s.get("hosts", list, [])]
+    if not all(isinstance(h, str) and h and "/" not in h for h in hosts):
+        raise ConfigError(f"{where}.hosts: expected hostnames, e.g. app.example.com")
+    prefix = s.get("prefix", str, None)
+    if prefix is None:
+        prefix = None if hosts else ""      # a route with hosts and no prefix is reached by hostname only
     route = Route(
         name=s.get("name", str),
         upstream=s.get("upstream", str).rstrip("/"),
-        prefix=s.get("prefix", str, "").rstrip("/"),
+        prefix=prefix.rstrip("/") if prefix is not None else None,
+        hosts=hosts,
         health=s.get("health", str, "/"),
         timeout=s.get("timeout", float, 600.0, lambda v: v > 0),
         work_methods=[m.upper() for m in work.get("methods", list, ["POST"])],
@@ -152,6 +161,7 @@ def _route(data, where):
         offline_status=off.get("status", int, 503),
         offline_body=off.get("body", (dict, list, str), None),
         cache_health=off.get("cache_health", bool, False),
+        wake_page=off.get("wake_page", bool, False),
     )
     if route.prefix and not route.prefix.startswith("/"):
         raise ConfigError(f"{where}.prefix: must start with /")
@@ -172,8 +182,12 @@ def parse(data):
     names = [r.name for r in routes]
     if len(set(names)) != len(names):
         raise ConfigError("config.routes: route names must be unique")
-    if len({r.prefix for r in routes}) != len(routes):
+    prefixed = [r.prefix for r in routes if r.prefix is not None]
+    if len(set(prefixed)) != len(prefixed):
         raise ConfigError("config.routes: two routes have the same prefix")
+    hosts = [h for r in routes for h in r.hosts]
+    if len(set(hosts)) != len(hosts):
+        raise ConfigError("config.routes: two routes have the same hostname")
     proxy = root.section("proxy")
     ui = root.section("status_page")
     history = root.section("history")

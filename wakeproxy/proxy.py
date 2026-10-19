@@ -8,13 +8,23 @@ Websockets are passed through: messages are copied both ways until either side c
 route's `work.websockets`, opening one counts as work: it wakes the machine and holds it until the
 connection closes.
 
+A route can also answer whole hostnames (`hosts`), for web apps that use absolute paths: the
+reverse proxy in front sends those hostnames here, and the path is forwarded as it is. With
+`while_off.wake_page`, a browser asking for a page while the machine is off gets a page with a
+Wake button instead of the offline answer; it reloads itself once the service answers. Websockets
+opened through a hostname never count as work: browser pages keep theirs open for as long as the
+tab is.
+
 Hold API (same port): POST /_wakeproxy/hold/<name> {"minutes", "reason", "wake", "ready"} keeps the
 machine on, DELETE /_wakeproxy/hold/<name> ends it, GET /_wakeproxy/status shows the state.
 """
 import asyncio
+import html
 import json
 import logging
 import socket
+import statistics
+from importlib import resources
 
 from aiohttp import ClientSession, ClientTimeout, DummyCookieJar, WSMsgType, WSServerHandshakeError, web
 
@@ -29,6 +39,7 @@ HOP_HEADERS = {"host", "content-length", "transfer-encoding", "connection", "kee
 RESPONSE_HOP_HEADERS = {"transfer-encoding", "connection", "keep-alive", "te", "upgrade",
                         "proxy-connection"}
 
+STATIC = resources.files("wakeproxy").joinpath("static")
 _client_names = {}
 UPSTREAM = web.AppKey("upstream", ClientSession)
 
@@ -86,6 +97,11 @@ async def pipe(a, b):
         await b.close()
 
 
+def wants_page(request):
+    """A browser navigating to a page (not a script, image or API call)."""
+    return request.method == "GET" and "text/html" in request.headers.get("Accept", "")
+
+
 def is_work(route, method, path):
     return method in route.work_methods and (
         route.work_paths is None or any(path.startswith(p) for p in route.work_paths))
@@ -113,15 +129,68 @@ def make_app(ctl):
         rec["id"] = ctl.history.start_request(rec)
         return rec
 
-    async def websocket(request, route, path):
-        rec = await start_record(request, route, "WS", path) if route.work_websockets else None
+    def wake_page(route):
+        page = STATIC.joinpath("wake.html").read_text()
+        for key, value in (("MACHINE", cfg.name), ("SERVICE", route.name), ("ROUTE", route.name)):
+            page = page.replace("{{" + key + "}}", html.escape(value))
+        return web.Response(text=page, status=503, content_type="text/html",
+                            headers={"Cache-Control": "no-store", "Retry-After": "10"})
+
+    async def alive(route):
+        """Whether the service answers. The background check (every 15 s) is trusted while it is
+        fresh, so a web app's many requests don't each cost an extra check against the machine."""
+        seen = ctl.services.get(route.name)
+        if ctl.state["pc_up"] and seen and seen["up"] and ctl.clock() - seen["checked"] < 30:
+            return True
+        return await ctl.route_alive(route)
+
+    def page_route(request):
+        route = ctl.route_by_name.get(request.query.get("route", ""))
+        return route if route and route.wake_page else None
+
+    async def page_state(route):
+        st = ctl.state
+        waits = [e["seconds"] for e in ctl.history.events(ctl.clock() - 30 * 86400)
+                 if e["kind"] == "wake_ok" and isinstance(e.get("seconds"), (int, float))]
+        return {"machine": cfg.name, "route": route.name, "now": ctl.clock(),
+                "up": bool(st["pc_up"]), "service_up": bool(st["pc_up"]) and await ctl.route_alive(route),
+                "waking": st["waking"]["since"] if st["waking"] else None,
+                "shutting_down": st["shutting_down"] is not None,
+                "typical_wake": round(statistics.median(waits)) if waits else None}
+
+    async def api_page_state(request):
+        route = page_route(request)
+        if not route:
+            return web.json_response({"error": "no such route with a wake page"}, status=404)
+        return web.json_response(await page_state(route), headers={"Cache-Control": "no-store"})
+
+    async def api_page_wake(request):
+        """The Wake button. Anyone who can reach the hostname can press it, so keep that behind
+        the authenticating reverse proxy, as for the app itself."""
+        route = page_route(request)
+        if not route:
+            return web.json_response({"error": "no such route with a wake page"}, status=404)
+        state = await page_state(route)
+        if not state["service_up"] and not state["shutting_down"]:
+            who = (cfg.user_header and request.headers.get(cfg.user_header)) or await client_name(request.remote)
+            ctl.wake_soon({"client": who, "route": route.name, "path": "wake page"}, ready=route.name)
+            state = await page_state(route)
+        return web.json_response(state)
+
+    async def page_logo(request):
+        return web.Response(text=STATIC.joinpath("logo.svg").read_text(), content_type="image/svg+xml",
+                            headers={"Cache-Control": "max-age=86400"})
+
+    async def websocket(request, route, path, by_host):
+        work = route.work_websockets and not by_host
+        rec = await start_record(request, route, "WS", path) if work else None
         try:
             if rec:
                 ctl.hold(route.name, rec["id"], f"{rec['client']} → {path} (websocket)")
                 if not await ctl.wake(rec, ready=route.name):
                     rec["status"], rec["error"] = 503, f"{cfg.name} failed to wake"
                     return web.json_response({"error": {"message": f"{cfg.name} failed to wake"}}, status=503)
-            elif not await ctl.route_alive(route):
+            elif not await alive(route):
                 return offline(route, request, path)
             # aiohttp makes its own handshake headers
             headers = {k: v for k, v in request.headers.items()
@@ -155,12 +224,11 @@ def make_app(ctl):
                 ctl.history.finish_request(rec)
 
     async def handle(request):
-        route = ctl.route_for(request.path)
+        route, path, by_host = ctl.match(request.host, request.path)
         if route is None:
             return web.json_response({"error": "no route for this path"}, status=404)
-        path = request.path[len(route.prefix):] or "/"
         if is_websocket(request):
-            return await websocket(request, route, path)
+            return await websocket(request, route, path, by_host)
         work = is_work(route, request.method, path)
         rec = await start_record(request, route, request.method, path) if work else None
         try:
@@ -181,7 +249,9 @@ def make_app(ctl):
                     return web.json_response({"error": {"message": f"{cfg.name} failed to wake"}}, status=503)
             else:
                 # never wake for probes
-                if not await ctl.route_alive(route):
+                if not await alive(route):
+                    if by_host and route.wake_page and wants_page(request):
+                        return wake_page(route)
                     return offline(route, request, path)
                 try:
                     body = await request.read()
@@ -271,5 +341,8 @@ def make_app(ctl):
     app.router.add_route("POST", "/_wakeproxy/hold/{name}", api_hold)
     app.router.add_route("DELETE", "/_wakeproxy/hold/{name}", api_hold)
     app.router.add_get("/_wakeproxy/status", api_status)
+    app.router.add_get("/_wakeproxy/page/state", api_page_state)
+    app.router.add_post("/_wakeproxy/page/wake", api_page_wake)
+    app.router.add_get("/_wakeproxy/page/logo.svg", page_logo)
     app.router.add_route("*", "/{tail:.*}", handle)
     return app

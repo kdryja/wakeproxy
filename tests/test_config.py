@@ -129,6 +129,25 @@ def test_source_on_a_route():
         build(minimal(routes=routes, sources=[{"type": "comfyui", "url": "http://pc:3", "route": "other"}]))
 
 
+def test_routes_by_hostname():
+    ctl = build(minimal(routes=[
+        {"name": "llm", "upstream": "http://pc:1"},
+        {"name": "app", "upstream": "http://pc:2", "hosts": ["App.Example.com"], "while_off": {"wake_page": True}},
+        {"name": "both", "prefix": "/b", "upstream": "http://pc:3", "hosts": ["b.example.com"]},
+    ]))
+    app = ctl.route_by_name["app"]
+    assert app.prefix is None and app.hosts == ["app.example.com"] and app.wake_page
+    assert ctl.match("app.example.com:443", "/x/y") == (app, "/x/y", True)
+    assert ctl.match("elsewhere", "/x")[0].name == "llm"              # a hostname route is never the default
+    assert ctl.match("b.example.com", "/b/z")[1] == "/b/z"            # by hostname: path kept
+    assert ctl.match("other", "/b/z")[1] == "/z"                      # by prefix: stripped
+    with pytest.raises(config.ConfigError, match="same hostname"):
+        build(minimal(routes=[{"name": "a", "upstream": "http://pc:1", "hosts": ["x.example"]},
+                              {"name": "b", "upstream": "http://pc:2", "hosts": ["X.example"]}]))
+    with pytest.raises(config.ConfigError, match=r"hosts: expected hostnames"):
+        build(minimal(routes=[{"name": "a", "upstream": "http://pc:1", "hosts": ["http://x/"]}]))
+
+
 def test_route_without_default_gives_none():
     ctl = build(minimal(routes=[{"name": "asr", "prefix": "/asr", "upstream": "http://pc:2"}]))
     assert ctl.route_for("/other") is None

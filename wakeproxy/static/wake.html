@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{MACHINE}} is off · {{SERVICE}}</title>
+<link rel="icon" type="image/svg+xml" href="/_wakeproxy/page/logo.svg">
+<style>
+:root {
+  --bg: #f6f7f9; --card: #ffffff; --text: #1c2330; --muted: #667085; --line: #e4e7ec;
+  --accent: #0e7490; --accent-soft: #e0f2f7; --on: #16a34a; --warn: #b45309; --bad: #dc2626;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1218; --card: #171b23; --text: #e6e9ef; --muted: #8b93a5; --line: #262c38;
+    --accent: #22b8d6; --accent-soft: #11313b; --on: #34d399; --warn: #f59e0b; --bad: #f87171;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg); color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; padding: 16px; }
+.card { width: 100%; max-width: 440px; background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+  padding: 28px 24px; text-align: center; }
+img { width: 48px; height: 48px; }
+h1 { font-size: 21px; margin: 12px 0 4px; letter-spacing: -0.01em; }
+p { margin: 0 0 18px; color: var(--muted); }
+button { font: inherit; font-weight: 600; border: 1px solid var(--accent); background: var(--accent); color: #fff;
+  padding: 10px 20px; border-radius: 9px; cursor: pointer; }
+button:disabled { opacity: .5; cursor: default; }
+.bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin: 6px 0 10px; display: none; }
+.bar div { height: 100%; width: 0; background: var(--accent); transition: width 1s linear; }
+.small { font-size: 13px; color: var(--muted); }
+a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main class="card">
+  <img src="/_wakeproxy/page/logo.svg" alt="">
+  <h1 id="title">{{MACHINE}} is off</h1>
+  <p id="text">{{SERVICE}} runs on {{MACHINE}}, which is switched off to save power.</p>
+  <div class="bar" id="bar"><div id="fill"></div></div>
+  <button id="wake">Wake {{MACHINE}}</button>
+  <p class="small" id="hint" style="margin:14px 0 0"></p>
+</main>
+<script>
+const ROUTE = "{{ROUTE}}", MACHINE = "{{MACHINE}}", SERVICE = "{{SERVICE}}";
+const $ = (id) => document.getElementById(id);
+const fmt = (s) => s < 90 ? `${Math.round(s)} s` : `${Math.round(s / 6) / 10} min`;
+let polling = null, clicked = null;   // clicked: when Wake was pressed here (ms)
+
+function show(title, text, button, progress) {
+  $("title").textContent = title;
+  $("text").textContent = text;
+  $("wake").style.display = button ? "" : "none";
+  if (button) { $("wake").disabled = button === "disabled"; }
+  $("bar").style.display = progress == null ? "none" : "block";
+  if (progress != null) $("fill").style.width = Math.min(97, progress * 100) + "%";
+}
+
+function render(s) {
+  const typical = s.typical_wake ? ` Usually takes about ${fmt(s.typical_wake)}.` : "";
+  if (s.service_up) {
+    show(`${SERVICE} is ready`, "Loading…", false, 1);
+    location.reload();
+  } else if (s.waking || (clicked && Date.now() - clicked < 20000 && !s.up)) {
+    // right after the click, wakeproxy first checks the service before it reports "waking"
+    // counted from the click when it was pressed here (wakeproxy starts its clock a little later)
+    const took = clicked ? (Date.now() - clicked) / 1000 : s.now - s.waking;
+    show(`Waking ${MACHINE}…`, `${fmt(took)} so far.${typical} This page reloads by itself.`, false,
+         s.typical_wake ? took / s.typical_wake : null);
+  } else if (s.shutting_down) {
+    show(`${MACHINE} is shutting down`, `You can wake it again once it is off.`, "disabled");
+  } else if (s.up) {
+    show(`Waiting for ${SERVICE}`, `${MACHINE} is on, but ${SERVICE} isn't answering yet. This page reloads by itself.`, false, null);
+  } else {
+    show(`${MACHINE} is off`, `${SERVICE} runs on ${MACHINE}, which is switched off to save power.${typical}`, true);
+  }
+  $("hint").textContent = "";
+}
+
+async function call(method, path) {
+  const r = await fetch(path + "?route=" + encodeURIComponent(ROUTE), { method, cache: "no-store" });
+  if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+  return r.json();
+}
+
+async function poll() {
+  try { render(await call("GET", "/_wakeproxy/page/state")); }
+  catch (e) { $("hint").textContent = "Can't reach wakeproxy (" + e.message + "), retrying…"; }
+}
+
+$("wake").addEventListener("click", async () => {
+  $("wake").disabled = true;
+  clicked = Date.now();
+  try { render(await call("POST", "/_wakeproxy/page/wake")); }
+  catch (e) { clicked = null; $("hint").textContent = "Waking failed: " + e.message; $("wake").disabled = false; }
+});
+
+poll();
+polling = setInterval(poll, 2000);
+</script>
+</body>
+</html>

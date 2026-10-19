@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.4.0
+
+- Routes can answer whole hostnames (`hosts`), for web apps with absolute paths: point the
+  reverse proxy's router for the hostname at wakeproxy, and the path is forwarded as it is.
+- `while_off.wake_page`: while the machine is off, a browser opening the app gets a page with a
+  Wake button, the progress (with the usual wake time from the history), and a reload once the
+  service answers. Scripts and API calls still get the offline answer.
+- Websockets opened through a hostname never count as work (browser tabs keep theirs open).
+- Requests that do no work trust the background service check (every 15 s) while it is fresh,
+  instead of checking the service before each request.
+
 ## 1.3.0
 
 - Answers are streamed back as they arrive instead of after the whole body: token streams

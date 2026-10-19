@@ -87,8 +87,11 @@ async def setup(**extra):
                      cache_health=True, offline_status=200, offline_body={"status": "ok"}),
         config.Route(name="asr", prefix="/asr", upstream=base, health="/docs"),
         config.Route(name="comfy", prefix="/comfy", upstream=base, health="/docs", work_websockets=True),
+        config.Route(name="app", prefix=None, hosts=["app.example"], upstream=base, health="/docs",
+                     wake_page=True, work_websockets=True),
     ]
     ctl.route_by_name = {r.name: r for r in ctl.cfg.routes}
+    ctl.route_by_host = {h: r for r in ctl.cfg.routes for h in r.hosts}
     for k, v in extra.items():
         setattr(ctl.cfg, k, v)
     ctl.http = ClientSession()
@@ -270,5 +273,94 @@ def test_redirects_cookies_and_compression_pass_through():
         assert sorted(c.split("=")[0] for c in r.headers.getall("Set-Cookie")) == ["a", "b"]
         r = await client.get("/asr/gzip")
         assert r.headers["Content-Encoding"] == "gzip" and await r.text() == "hello " * 100
+        await teardown(ctl, upstream, client)
+    asyncio.run(go())
+
+
+APP = {"Host": "app.example"}
+PAGE = {"Host": "app.example", "Accept": "text/html,application/xhtml+xml,*/*;q=0.8"}
+
+
+def test_hostname_route_keeps_the_path():
+    async def go():
+        ctl, clock, m, up, upstream, client = await setup()
+        m.on = True
+        r = await client.get("/api/thing?x=1", headers=APP)
+        assert (await r.json())["path"] == "/api/thing"                  # not stripped, not "llm"
+        assert up.seen[-1][1] == "/api/thing"
+        r = await client.get("/asr/docs", headers=APP)                    # a prefix means nothing here
+        assert up.seen[-1][1] == "/asr/docs"
+        r = await client.post("/v1/chat", headers={"Host": "other.example"}, json={})
+        assert ctl.history.requests(0)[0]["route"] == "llm"               # other hosts: by path as before
+        await teardown(ctl, upstream, client)
+    asyncio.run(go())
+
+
+def test_wake_page_for_browsers_while_off():
+    async def go():
+        ctl, clock, m, up, upstream, client = await setup()
+        r = await client.get("/", headers=PAGE)
+        text = await r.text()
+        assert r.status == 503 and r.headers["Content-Type"].startswith("text/html")
+        assert "Wake TestPC" in text and 'ROUTE = "app"' in text and m.calls == []
+        r = await client.get("/api/thing", headers=APP)                   # not a page: the usual answer
+        assert r.status == 503 and (await r.json())["status"] == "offline"
+        r = await client.get("/", headers={"Accept": "text/html"})        # by path: no wake page
+        assert r.status == 200 and (await r.json())["status"] == "ok"
+        r = await client.get("/_wakeproxy/page/logo.svg", headers=APP)
+        assert r.status == 200 and "svg" in r.headers["Content-Type"]
+        await teardown(ctl, upstream, client)
+    asyncio.run(go())
+
+
+def test_wake_page_state_and_button():
+    async def go():
+        ctl, clock, m, up, upstream, client = await setup(user_header="X-User")
+        ctl.history.event("wake_ok", seconds=80, route="app")
+        ctl.history.event("wake_ok", seconds=100, route="app")
+        r = await client.get("/_wakeproxy/page/state?route=app", headers=APP)
+        st = await r.json()
+        assert st["up"] is False and st["service_up"] is False and st["typical_wake"] == 90
+        r = await client.get("/_wakeproxy/page/state?route=llm", headers=APP)
+        assert r.status == 404                                            # no wake page on that route
+        woken = []
+        ctl.wake_soon = lambda trigger, ready=None: woken.append((trigger, ready))
+        r = await client.post("/_wakeproxy/page/wake?route=app", headers={**APP, "X-User": "alice"})
+        assert r.status == 200
+        assert woken == [({"client": "alice", "route": "app", "path": "wake page"}, "app")]
+        m.on = True
+        ctl.state["pc_up"] = True
+        st = await (await client.get("/_wakeproxy/page/state?route=app", headers=APP)).json()
+        assert st["service_up"] is True
+        await client.post("/_wakeproxy/page/wake?route=app", headers=APP)
+        assert len(woken) == 1                                            # already up: no wake
+        await teardown(ctl, upstream, client)
+    asyncio.run(go())
+
+
+def test_hostname_websockets_never_hold():
+    async def go():
+        ctl, clock, m, up, upstream, client = await setup()
+        m.on = True
+        ws = await client.ws_connect("/ws?clientId=page", headers=APP)
+        assert await ws.receive_json() == {"hello": "page"}
+        assert ctl.active_holds() == [] and ctl.history.requests(0) == []
+        await ws.close()
+        await teardown(ctl, upstream, client)
+    asyncio.run(go())
+
+
+def test_fresh_background_check_saves_a_health_check_per_request():
+    async def go():
+        ctl, clock, m, up, upstream, client = await setup()
+        m.on = True
+        ctl.state["pc_up"] = True
+        ctl.services["app"] = {"up": True, "checked": clock()}
+        for _ in range(3):
+            await client.get("/asset.js", headers=APP)
+        assert [p for _, p, _ in up.seen] == ["/asset.js"] * 3        # no /docs health checks
+        clock.advance(60)                                               # stale: checked again
+        await client.get("/asset.js", headers=APP)
+        assert [p for _, p, _ in up.seen][-2:] == ["/docs", "/asset.js"]
         await teardown(ctl, upstream, client)
     asyncio.run(go())

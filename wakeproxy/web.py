@@ -49,7 +49,7 @@ def make_app(ctl):
         requests = h.requests(since)
         for r in requests:      # the path as the client sent it, with the route's prefix
             route = ctl.route_by_name.get(r["route"])
-            r["full_path"] = (route.prefix if route else "") + (r["path"] or "")
+            r["full_path"] = ((route.prefix or "") if route else "") + (r["path"] or "")
         return web.json_response({"since": since, "now": now,
                                   "events": event_text.with_text(h.events(since), cfg.name),
                                   "requests": requests, "by_client": h.by_client(since),

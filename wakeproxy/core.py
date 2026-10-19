@@ -75,6 +75,7 @@ class Controller:
         self.services = {}    # route name -> {"up", "checked"}
         self.health_cache = {}
         self.route_by_name = {r.name: r for r in cfg.routes}
+        self.route_by_host = {h: r for r in cfg.routes for h in r.hosts}
         self.http = None
         self.lock = None
         self.tasks = set()
@@ -183,9 +184,23 @@ class Controller:
 
     # --- the machine ------------------------------------------------------------------------
 
+    def match(self, host, path):
+        """The route for a request and the path to forward, and whether it was picked by hostname.
+        A hostname match comes first and keeps the path as it is (for web apps with absolute
+        paths); otherwise the path prefix decides and is stripped."""
+        route = self.route_by_host.get((host or "").split(":")[0].lower())
+        if route:
+            return route, path, True
+        route = self.route_for(path)
+        if route is None:
+            return None, path, False
+        return route, path[len(route.prefix):] or "/", False
+
     def route_for(self, path):
         default = None
         for r in self.cfg.routes:
+            if r.prefix is None:
+                continue
             if not r.prefix:
                 default = r
             elif path == r.prefix or path.startswith(r.prefix + "/"):
@@ -403,7 +418,7 @@ class Controller:
                       "override": self.state["override"] if managed else None,
                       "last_activity": self.state["last_activity"] or None},
             "holds": [{k: h[k] for k in ("source", "label", "detail", "since", "until")} for h in held],
-            "services": [{"name": r.name, "upstream": r.upstream,
+            "services": [{"name": r.name, "upstream": r.upstream, "hosts": r.hosts,
                           **self.services.get(r.name, {"up": None, "checked": None})}
                          for r in self.cfg.routes],
             "sources": [{"name": s.name, "type": s.type, "wakes": s.wakes, "route": s.route, **s.status()}

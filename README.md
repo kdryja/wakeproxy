@@ -88,13 +88,21 @@ wakeproxy at startup with the place in the file, e.g.
 - `routes`: the services on the machine, picked by path prefix (the prefix is stripped before
   forwarding). Answers are streamed back as they arrive, with the service's own headers. Each route has:
   - `upstream` and `health` (the URL to check);
+  - `hosts` (optional): hostnames the route answers whatever the path, for web apps that use
+    absolute paths. Point your reverse proxy's router for that hostname at wakeproxy; the path
+    is forwarded unchanged. A route with `hosts` and no `prefix` is only reached that way;
   - `timeout`;
   - `work`: which methods and path prefixes do work, i.e. wake and hold. Websockets are passed
     through; with `websockets: true`, opening one does work too and holds the machine until it
     closes. That suits clients that open one per job (Open WebUI with ComfyUI). Leave it off for
     clients that keep one open all the time, or the machine never shuts down;
   - `while_off`: the answer to other requests while the machine is off. `cache_health` answers
-    `GET <health>` with its last response.
+    `GET <health>` with its last response. `wake_page` (with `hosts`): a browser opening a page
+    gets a page with a **Wake** button that shows the progress and reloads once the service
+    answers; scripts and API calls still get the offline answer. Anyone who can reach the
+    hostname can press the button, so keep it behind your authenticating reverse proxy.
+    Websockets opened through a hostname never count as work, since a browser tab keeps its own
+    open for as long as the tab exists.
 - `sources`: wake sources. `name` (optional) is shown on the status page; `route` (optional)
   shows the source on that route's line instead of its own, for a source that watches the same
   service (e.g. `comfyui` on a route to ComfyUI).
