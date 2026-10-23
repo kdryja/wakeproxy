@@ -47,6 +47,10 @@ class Plugin:
 
 class PowerOn(Plugin):
     kind = "power_on"
+    # True when sending it again while the machine boots (or is on) does no harm, like a
+    # Wake-on-LAN packet. wakeproxy then repeats it by default (machine.wake_packets and
+    # machine.wake_resend); a smart plug toggle or a script must not be.
+    repeat_safe = False
 
     async def power_on(self):
         """Start the machine. Raise an exception if the request could not be sent."""

@@ -77,6 +77,8 @@ class Config:
     checks: list
     routes: list
     sources: list
+    wake_packets: int = None          # sends at the start of a wake (None: 3 if the wake plugin is repeat-safe, else 1)
+    wake_resend: int = None           # seconds between further sends while waiting (None: 30 / 0; 0 = never)
     proxy_port: int = 8009
     max_upload_mb: int = 1024
     hold_token: str = None
@@ -207,6 +209,8 @@ def parse(data):
         name=machine.get("name", str),
         idle_seconds=int(machine.get("idle_minutes", (int, float), 10, lambda v: v > 0) * 60),
         wake_timeout=machine.get("wake_timeout", int, 180, lambda v: v > 0),
+        wake_packets=machine.get("wake_packets", int, None, lambda v: v >= 1),
+        wake_resend=machine.get("wake_resend", int, None, lambda v: v >= 0),
         power_on=_plugin(machine.get("wake", dict), "config.machine.wake"),
         power_off=_plugin(machine.get("shutdown", dict), "config.machine.shutdown"),
         checks=[_plugin(c, f"config.machine.up_check[{i}]") for i, c in enumerate(checks)],

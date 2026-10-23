@@ -11,6 +11,7 @@ class WakeOnLan(PowerOn):
     the same network segment: in Docker this needs `network_mode: host` (or use the homeassistant
     plugin, which sends it from Home Assistant)."""
     type = "wol"
+    repeat_safe = True
 
     def __init__(self, ctx, *, mac, broadcast="255.255.255.255", port=9):
         super().__init__(ctx)

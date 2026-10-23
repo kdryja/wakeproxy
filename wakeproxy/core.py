@@ -56,6 +56,7 @@ class PluginContext:
 
 class Controller:
     wake_poll = 3.0          # seconds between readiness checks during a wake
+    wake_gap = 2.0           # seconds between the sends at the start of a wake (wake_packets)
     monitor_interval = 15.0  # seconds between on/off checks
     watchdog_interval = 15.0
 
@@ -89,6 +90,11 @@ class Controller:
         registry = plugins.builtin_plugins()
         registry.update(plugins.load_plugin_paths(self.cfg.plugin_paths))
         self.power_on = self._make(registry, "power_on", self.cfg.power_on)
+        # A lost magic packet otherwise means waiting out the whole wake_timeout: repeat-safe
+        # wakes are sent a few times at the start and again while the machine has not answered.
+        safe = bool(getattr(self.power_on, "repeat_safe", False))
+        self.wake_packets = self.cfg.wake_packets or (3 if safe else 1)
+        self.wake_resend = self.cfg.wake_resend if self.cfg.wake_resend is not None else (30 if safe else 0)
         self.power_off = self._make(registry, "power_off", self.cfg.power_off)
         self.checks = [self._make(registry, "check", c) for c in self.cfg.checks]
         self.sources = []
@@ -251,13 +257,20 @@ class Controller:
             self.state["waking"] = {"since": started, "trigger": info}
             trigger["woke"] = 1
             was_up = bool(self.state["pc_up"])
-            error = None
-            try:
-                await self.power_on.power_on()
-            except Exception as e:
-                error = f"{type(e).__name__}: {e}"[:300]
-                log.warning("wake failed: %s", error)
-            self.history.event("wake", trigger=info, pc_was_up=was_up, wol_sent=error is None, error=error)
+            error, sent = None, 0
+            for i in range(self.wake_packets):
+                if i:
+                    await asyncio.sleep(self.wake_gap)
+                failure = await self._send_wake()
+                if failure is None:
+                    sent += 1
+                else:
+                    error = failure
+            if sent:
+                error = None                   # one send that worked is enough
+            self.history.event("wake", trigger=info, pc_was_up=was_up, wol_sent=sent > 0, error=error,
+                               packets=sent)
+            last_sent = self.clock()
             # A machine that was already on (only a service was down) was not woken by us:
             # don't shut it down later.
             if not was_up:
@@ -270,14 +283,29 @@ class Controller:
                     if await self.ready(ready):
                         log.info("%s is up", ready or self.cfg.name)
                         self.history.event("wake_ok", seconds=round(self.clock() - started),
-                                           route=ready or self.cfg.name)
+                                           route=ready or self.cfg.name, packets=sent)
                         self.touch()
                         return True
+                    if self.wake_resend and self.clock() - last_sent >= self.wake_resend:
+                        last_sent = self.clock()
+                        if await self._send_wake() is None:
+                            sent += 1
                 log.warning("%s did not answer within %ss", ready or self.cfg.name, self.cfg.wake_timeout)
-                self.history.event("wake_failed", seconds=self.cfg.wake_timeout, route=ready or self.cfg.name)
+                self.history.event("wake_failed", seconds=self.cfg.wake_timeout, route=ready or self.cfg.name,
+                                   packets=sent)
                 return False
             finally:
                 self.state["waking"] = None
+
+    async def _send_wake(self):
+        """Send the wake once; returns the error text, or None when it was sent."""
+        try:
+            await self.power_on.power_on()
+            return None
+        except Exception as e:
+            error = f"{type(e).__name__}: {e}"[:300]
+            log.warning("wake failed: %s", error)
+            return error
 
     def wake_soon(self, trigger, ready=None):
         if not self.state["waking"]:

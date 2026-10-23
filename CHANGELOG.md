@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.6.0
+
+- A wake that is safe to repeat is sent several times: three times at the start, 2 s apart, then
+  again every 30 s until the machine answers. A single lost magic packet used to mean waiting out
+  `wake_timeout` and failing the request that asked for the wake; extra packets do nothing to a
+  machine that is already booting. This is the default for `wol` and for `homeassistant` sending
+  `wake_on_lan.send_magic_packet`; other wakes (a switch, a script, an HTTP call) are still sent
+  once. New `machine.wake_packets` and `machine.wake_resend` change it, for any wake.
+- Wake plugins say whether they can be repeated with `repeat_safe`.
+- History: `wake`, `wake_ok` and `wake_failed` events record how many wakes were sent (`packets`).
+
 ## 1.5.2
 
 - Fix: paths and query strings are passed on exactly as the client sent them. They were decoded

@@ -85,6 +85,13 @@ wakeproxy at startup with the place in the file, e.g.
   - `wake`: how to turn it on;
   - `shutdown`: how to turn it off;
   - `up_check`: a list of checks; the machine is up when any of them answers.
+
+  A wake is sent more than once when that's harmless, since a single magic packet can get
+  lost and the wake would then only fail after `wake_timeout`: `wake_packets` sends at the start,
+  2 s apart, then one more every `wake_resend` seconds until the machine answers. The defaults
+  are 3 and 30 for a magic packet (`wol`, or `homeassistant` with `wake_on_lan.send_magic_packet`)
+  and 1 and 0 (no repeats) for anything else, where repeating could toggle a switch back off.
+  Setting either one applies it to whatever `wake` is.
 - `routes`: the services on the machine, picked by path prefix (the prefix is stripped before
   forwarding). Answers are streamed back as they arrive, with the service's own headers. Each route has:
   - `upstream` and `health` (the URL to check);
@@ -230,8 +237,9 @@ Times inside texts for the page (hold labels, notes, `status()`) should be writt
 `wakeproxy.plugins.at(ts)`, so the page shows them in the viewer's time zone.
 
 Wake, shutdown and check plugins subclass `PowerOn`, `PowerOff` and `Check`, implementing
-`power_on()`, `power_off(force)` and `check()`. The built-ins in `wakeproxy/plugins/` are short
-examples of each.
+`power_on()`, `power_off(force)` and `check()`. A wake plugin whose action can be repeated
+harmlessly (like a magic packet) sets `repeat_safe = True` (or a property), so wakeproxy repeats
+it by default. The built-ins in `wakeproxy/plugins/` are short examples of each.
 
 ## Development
 

@@ -25,6 +25,11 @@ class HomeAssistantWake(PowerOn):
         super().__init__(ctx)
         self.ha, self.service, self.data = HomeAssistant(ctx, url, token, timeout), service, data
 
+    @property
+    def repeat_safe(self):
+        # A magic packet can be sent again; another service (a switch, a script) may toggle.
+        return self.service == "wake_on_lan.send_magic_packet"
+
     def describe(self):
         if self.service == "wake_on_lan.send_magic_packet":
             return "Wake-on-LAN via Home Assistant"

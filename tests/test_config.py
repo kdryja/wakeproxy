@@ -92,6 +92,32 @@ def test_bad_mac():
         build(data)
 
 
+def test_wake_repeats_default_by_plugin():
+    ctl = build(minimal())                               # wol: a magic packet, safe to repeat
+    assert (ctl.wake_packets, ctl.wake_resend) == (3, 30)
+    data = minimal()
+    data["machine"]["wake"] = {"type": "homeassistant", "url": "http://ha", "token": "t",
+                               "data": {"mac": "aa:bb:cc:dd:ee:ff"}}
+    ctl = build(data)                                    # Home Assistant sending a magic packet
+    assert ctl.power_on.repeat_safe and (ctl.wake_packets, ctl.wake_resend) == (3, 30)
+    data["machine"]["wake"] = {"type": "homeassistant", "url": "http://ha", "token": "t",
+                               "service": "switch.toggle", "data": {"entity_id": "switch.pc"}}
+    ctl = build(data)                                    # a toggle must not be repeated
+    assert not ctl.power_on.repeat_safe and (ctl.wake_packets, ctl.wake_resend) == (1, 0)
+    data["machine"]["wake"] = {"type": "command", "command": "true"}
+    assert (build(data).wake_packets, build(data).wake_resend) == (1, 0)
+
+
+def test_wake_repeats_can_be_set():
+    data = minimal()
+    data["machine"].update(wake_packets=5, wake_resend=0)
+    ctl = build(data)
+    assert (ctl.wake_packets, ctl.wake_resend) == (5, 0)
+    data["machine"]["wake_packets"] = 0
+    with pytest.raises(config.ConfigError, match=r"config\.machine\.wake_packets: invalid value 0"):
+        config.parse(data)
+
+
 def test_duplicate_source_names():
     t = {"type": "tdarr", "url": "http://t", "node": "PC"}
     with pytest.raises(config.ConfigError, match="same name"):

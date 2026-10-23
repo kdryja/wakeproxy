@@ -52,6 +52,49 @@ def test_wake_plugin_error_is_recorded():
     assert wake["wol_sent"] is False and "no route to host" in wake["error"]
 
 
+def test_repeat_safe_wake_is_sent_three_times():
+    ctl, clock, m = make(wake={"repeat_safe": True}, boot_seconds=20)   # up before the 30 s resend
+    assert run(ctl.wake({"client": "test"}))
+    assert m.calls == ["wake"] * 3
+    wake, ok = [e for e in ctl.history.events(0) if e["kind"] in ("wake", "wake_ok")][::-1]
+    assert wake["packets"] == 3 and wake["wol_sent"] is True and ok["packets"] == 3
+
+
+def test_lost_packets_are_sent_again_while_waiting():
+    # The three packets at the start are lost; the one sent 30 s later wakes the machine.
+    ctl, clock, m = make(wake={"repeat_safe": True}, lost=3, boot_seconds=20)
+    assert run(ctl.wake({"client": "test"}))
+    assert m.calls == ["wake"] * 4
+    ok = [e for e in ctl.history.events(0) if e["kind"] == "wake_ok"][0]
+    assert ok["packets"] == 4 and ok["seconds"] < 180
+
+
+def test_wake_that_is_not_repeat_safe_is_sent_once():
+    # A smart plug toggle or a script: one send, never repeated, even if nothing happens.
+    ctl, clock, m = make(lost=1)
+    assert not run(ctl.wake({"client": "test"}))
+    assert m.calls == ["wake"]
+
+
+def test_repeats_can_be_set_for_any_wake():
+    ctl, clock, m = make(wake_packets=2, wake_resend=0, lost=2)
+    assert not run(ctl.wake({"client": "test"}))
+    assert m.calls == ["wake"] * 2
+
+
+def test_resend_can_be_switched_off_for_a_repeat_safe_wake():
+    ctl, clock, m = make(wake={"repeat_safe": True}, wake_resend=0, lost=3)
+    assert not run(ctl.wake({"client": "test"}))
+    assert m.calls == ["wake"] * 3
+
+
+def test_one_send_that_works_is_enough():
+    ctl, clock, m = make(wake={"repeat_safe": True, "fail_first": 2})
+    assert run(ctl.wake({"client": "test"}))
+    wake = [e for e in ctl.history.events(0) if e["kind"] == "wake"][0]
+    assert wake["wol_sent"] is True and wake["error"] is None and wake["packets"] == 1
+
+
 def test_idle_shutdown_after_the_timer():
     ctl, clock, m = make()
 

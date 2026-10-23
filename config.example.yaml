@@ -8,6 +8,12 @@ machine:
   name: MyPC                    # shown on the status page and in messages
   idle_minutes: 10              # shut down this long after the last hold ends (default 10)
   wake_timeout: 180             # seconds to wait for the machine to answer after a wake (default 180)
+  # A wake that is safe to repeat (a magic packet: wol, or homeassistant with
+  # wake_on_lan.send_magic_packet) is sent several times, because one packet can get lost:
+  # wake_packets: 3             # sends at the start, 2 s apart (default 3; 1 for other wakes)
+  # wake_resend: 30             # then again every this many seconds until the machine answers
+                                # (default 30; 0 for other wakes; 0 = never). Setting either one
+                                # applies it to any wake plugin, so only do that if repeating is harmless.
 
   # How to wake it (one plugin). Built in: wol, homeassistant, http, command.
   wake:
